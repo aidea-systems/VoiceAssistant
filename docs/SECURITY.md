@@ -235,7 +235,7 @@ a pg_cron job beside `voice-calls-sweep`.
 
 ## Open decisions
 
-- `REL-9` the first deploy on the hosts of decision 0013 (`OPS-3` is decided: Hetzner, Vercel).
+- `REL-9` the first deploy on the hosts of decision 0013 (`OPS-3` is decided: a Google Cloud VM, decision 0017, and Vercel).
 - `OPS-4` retention for `channel = 'voice'` (and chat) rows, and the sweep that enforces it.
 - `OPS-5` the DPA list and the records of processing before the first user trial.
 - `CORE-1`, `VOICE-2` the native review of every Croatian string.

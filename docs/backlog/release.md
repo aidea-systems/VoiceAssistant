@@ -21,15 +21,15 @@ three sets of checks) and says how to paste the results back.
 - [ ] REL-9 · Step 0 of `docs/plan/10-integration-roadmap.md`: the first deploy on the hosts of
       decision 0013, step by step in `docs/DEPLOY-RUNBOOK.md` (`deploy/compose.prod.yml`,
       `deploy/Caddyfile`, `vercel.json` added 2026-11-03; `OPS-1` deferred, the images still run
-      tsx). (a) Hetzner VM (Falkenstein, Docker, Caddy): the api and voice images from a
+      tsx). (a) Google Compute Engine VM (Frankfurt, decision 0017; was Hetzner; Docker, Caddy): the api and voice images from a
       tagged commit, secrets from the matrix in the host's env store, `CORS_ORIGINS` = the Vercel
       origin, `VOICE_AGENT_NAME` = `AGENT_NAME`; `OPS-1` (built `dist`, which also removes the
       worker's 6 s import, `VOICE-4`) ships with it. (b) Vercel project for `apps/web` with the
       three production `VITE_` values. (c) `REL-8` auth URLs to the Vercel origin. (d) DNS for
       the API at Caddy. (e) The smoke: `/health`, one streamed turn from the PWA, one in-app call
       against the hosted worker (`REL-5`), the Lighthouse audit (`REL-4`), and the live checklist
-      of `docs/VOICE.md` with the figures recorded as the hosted baseline. (f) DPAs with Hetzner
-      and Vercel noted in `OPS-5`. Done when a call from the PWA reaches the hosted worker with
+      of `docs/VOICE.md` with the figures recorded as the hosted baseline. (f) DPAs with Google
+      Cloud and Vercel noted in `OPS-5`. Done when a call from the PWA reaches the hosted worker with
       every developer machine off.
 
 - [x] REL-10 · Part 11a: apply `20261103120000_phone_channel.sql` to the dev project (after

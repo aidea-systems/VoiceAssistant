@@ -1,7 +1,8 @@
-# Deploy runbook — the first deploy on Hetzner and Vercel, and the Twilio number (`REL-9`)
+# Deploy runbook — the first deploy on Google Cloud and Vercel, and the Twilio number (`REL-9`)
 
-Written 2026-11-03 for an operator who has not used Hetzner, Vercel, Twilio or Docker before.
-Every step says exactly what to click or type and what to expect. Decision 0013 chose the hosts;
+Written 2026-11-03 for an operator who has not used Google Cloud, Vercel, Twilio or Docker
+before. Every step says exactly what to click or type and what to expect. Decision 0013 chose
+the hosts and decision 0017 moved the VM to Google Cloud on 2026-11-06;
 `docs/OPS.md` → Deploy has the table and the sub-processors. Nothing here touches the database:
 the migrations are already on the dev project (`docs/RELEASE-RUNBOOK.md`).
 
@@ -10,7 +11,7 @@ order, in one sitting of about two hours; step 10 whenever a new version ships.
 
 ## Before you start
 
-- Accounts you will create or already have: GitHub (the repository), Hetzner Cloud, Vercel,
+- Accounts you will create or already have: GitHub (the repository), Google Cloud, Vercel,
   Twilio. Each needs a payment method. Use the company's email and a password manager.
 - On this machine: `~/.config/va/voice.env` with the LiveKit, Soniox, ElevenLabs, Anthropic keys
   you used for the live checklist. You will copy values out of it by hand. Never paste a key into
@@ -39,14 +40,18 @@ bundle for Croatia, reviewed by hand, so this is the long pole.
    - a proof of the local address if the extract does not show it: a utility bill or a tax notice;
    - the ID card or passport of the person who will be named as the authorised representative.
 3. Console → **Phone Numbers** → **Regulatory Compliance** → **Bundles** → **Create a Regulatory
-   Bundle**. Choose: country **Croatia**, number type **Local**, end-user type **Business**.
+   Bundle**. Choose: country **Croatia**, number type **Local**, end-user type **Business**
+   (a **Toll-free** bundle is what was approved on 2026-11-05; it buys only `+385 800` numbers,
+   free for the caller, paid per inbound minute, and reachable only from within Croatia per
+   Twilio's guidelines; a Local number needs its own bundle with the same documents).
    Fill the business name exactly as on the extract, the MBS as the registration number, the
    registered address, and the representative. Upload the documents where asked. Submit.
    Expect the bundle to show **Pending review**; approval is usually a few business days, and a
    rejection names the missing document. Nothing else is blocked meanwhile.
 4. When the bundle is **Approved**: Console → **Phone Numbers** → **Buy a number** → country
-   Croatia, type Local, capability **Voice** ticked. Pick any number, click **Buy**, choose the
-   approved bundle and the address when asked. Record the number in E.164 (`+385…`).
+   Croatia, the bundle's type (Local or Toll-free), capability **Voice** ticked. Pick any
+   number, click **Buy**, choose the approved bundle and the address when asked. Record the
+   number in E.164 (`+385…`).
 5. Do nothing else in Twilio now: the trunk to LiveKit is Part 11c and has its own steps.
 
 ## 2. The API's hostname
@@ -61,26 +66,47 @@ Caddy needs a hostname to get an HTTPS certificate. Two ways:
 
 Write the hostname down as `API_HOST`; you type it in step 5.
 
-## 3. Hetzner: the VM
+## 3. Google Cloud: the VM
 
-1. console.hetzner.cloud → sign up → **New project**, name it after the product.
-2. In the project, **Security** → **SSH keys** → **Add SSH key**. On this machine:
+1. console.cloud.google.com → sign in with the company's Google account → **Start free** if the
+   account is new (a payment method is asked for; the trial credit is attached to the billing
+   account it creates). Top bar → project selector → **New project**, name it after the product,
+   and select it. Record the project id shown under the name.
+2. The SSH key. On this machine:
 
-```sh
-ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519 -C "va-deploy" -f ~/.ssh/id_ed25519
-cat ~/.ssh/id_ed25519.pub
-```
+   ```sh
+   ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519 -C "va" -f ~/.ssh/id_ed25519
+   cat ~/.ssh/id_ed25519.pub
+   ```
 
-Paste the one printed line into the form, name it `laptop`. 3. **Servers** → **Add server**: location **Falkenstein**; image **Ubuntu 24.04**; type **Shared
-vCPU, x86**, the smallest with **4 GB** RAM (CX22 or its current successor); networking: public
-IPv4 **and** IPv6 on; SSH key: `laptop`; firewalls: create one now, name `va`, inbound rules
-**SSH 22**, **HTTP 80**, **HTTPS 443** (TCP; add **UDP 443** too for HTTP/3), no other inbound;
-name `va-1`. **Create & buy now**. Expect the server to show a public IPv4 within a minute.
-Record it as `VM_IP`. 4. First login (accept the host key with `yes`):
+   The comment after the key (`va`) becomes the login user on the VM. Navigation menu →
+   **Compute Engine** → **VM instances** (the first visit enables the Compute Engine API; wait
+   for it) → **Settings** → **Metadata** → **SSH keys** → **Add SSH key**: paste the one printed
+   line. Save.
 
-```sh
-ssh root@VM_IP
-```
+3. The static address: Navigation menu → **VPC network** → **IP addresses** → **Reserve external
+   static IP address**: name `va-1-ip`, tier **Premium**, version **IPv4**, type **Regional**,
+   region **europe-west3 (Frankfurt)**, attached to **None**. Reserve. Record it as `VM_IP`. An
+   ephemeral address changes when the VM stops, which is why this comes before DNS.
+4. The firewall: **VPC network** → **Firewall** → **Create firewall rule**: name `va-web`,
+   network `default`, direction **Ingress**, action **Allow**, targets **Specified target tags**
+   with tag `va`, source IPv4 ranges `0.0.0.0/0`, protocols **TCP** ports `80,443` and **UDP**
+   port `443`. Create. The `default` network already has `default-allow-ssh` for port 22; add
+   nothing else inbound.
+5. The instance: **Compute Engine** → **VM instances** → **Create instance**: name `va-1`;
+   region **europe-west3 (Frankfurt)**, any zone; machine series **E2**, type **e2-medium**
+   (2 vCPU, 4 GB); **OS and storage** → **Change** → **Ubuntu 24.04 LTS** (x86/64), balanced
+   persistent disk **20 GB**; **Networking** → network tags `va`, under the network interface
+   **External IPv4 address** → `va-1-ip`; leave the rest default. **Create**. Expect the row to
+   show `VM_IP` as the external IP within a minute. Record the machine type and the zone.
+6. **Billing** → the billing account → **Activate** (or **Upgrade**) the full account before the
+   pilot: the credit stays and is spent first, but a trial that runs out stops the VM.
+7. First login (accept the host key with `yes`), then become root for everything that follows:
+
+   ```sh
+   ssh va@VM_IP
+   sudo -i
+   ```
 
 ## 4. On the VM: Docker and the repository
 
@@ -275,7 +301,8 @@ paste the results back (below).
 ## 10. Later: updating, logs, rollback
 
 ```sh
-ssh root@VM_IP
+ssh va@VM_IP
+sudo -i
 cd /opt/va/app && git pull && git log -1 --oneline
 docker compose -f deploy/compose.prod.yml up -d --build        # rebuilds what changed, restarts it
 docker compose -f deploy/compose.prod.yml logs -f api          # Ctrl+C to stop following
@@ -287,7 +314,7 @@ are forward-only and are never run from the VM. The PWA redeploys itself on ever
 `main`; a rollback there is **Deployments** → the previous one → **Promote to Production**.
 
 Monthly: `apt-get update && apt-get -y upgrade && reboot` on the VM (the containers restart by
-themselves), and a look at Hetzner's **Graphs** for the server.
+themselves), and a look at the instance's **Observability** tab in the Google Cloud console.
 
 ## 11. The phone number: the Twilio trunk and the LiveKit dispatch (Part 11c)
 
@@ -417,7 +444,7 @@ Reply in the chat with one line per step, without any key or token:
 ## 1 Twilio: bundle submitted <date> / approved <date> / number +385…
 ## 11 trunk id, rule id, first call: greeting / PIN / answer / hang-up (ok or what happened), the log lines
 ## 11.6 the ten takes: stopwatch seconds and the timing lines
-## 3 VM: VM_IP, server type
+## 3 VM: VM_IP, machine type and zone
 ## 2/6 API_HOST, /health response
 ## 6 compose ps output (three lines)
 ## 7 WEB_ORIGIN
