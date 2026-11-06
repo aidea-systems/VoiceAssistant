@@ -464,6 +464,13 @@ next to the API (a Google Compute Engine VM in Frankfurt since decision 0017). T
 worker, its providers and its call lifecycle. `AGENT_NAME` keeps the worker to dispatched jobs,
 and nothing in the worker depends on where it runs.
 
+**First hosted call (2026-11-06, `va-1` in `europe-west3-c`, LiveKit Frankfurt, the dev
+project, Sonnet 5.5 at `low`, from the PWA in a browser):** three turns, first text 3.52 s /
+2.33 s / 1.52 s, whole answer 3.63 s / 3.01 s / 2.06 s, no tool calls, `participant_disconnected`
+on hang-up. Not a bench (n = 3, one caller); the hosted baseline is the live checklist, still to
+run (`REL-9`). The worker image needed `ca-certificates`: `@livekit/rtc-node` reads the system
+root store, which `node:24-slim` lacks, so every room join failed until it was installed.
+
 ## Testing
 
 `apps/voice/test/harness.ts` runs the worker's pieces against the `@va/core` fakes: no LiveKit

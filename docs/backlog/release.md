@@ -30,7 +30,11 @@ three sets of checks) and says how to paste the results back.
       against the hosted worker (`REL-5`), the Lighthouse audit (`REL-4`), and the live checklist
       of `docs/VOICE.md` with the figures recorded as the hosted baseline. (f) DPAs with Google
       Cloud and Vercel noted in `OPS-5`. Done when a call from the PWA reaches the hosted worker with
-      every developer machine off.
+      every developer machine off. Progress 2026-11-06: (a) to (d) done on the Google Cloud VM
+      `va-1` (`europe-west3-c`, `e2-medium`, `34-141-30-245.sslip.io`) and the Vercel project
+      `voice-assistant-nine-dun`; (e) the streamed turn and the hosted call pass (`REL-5`); the
+      worker image needed `ca-certificates` (fixed in the same branch); still open: the manifest
+      check (`REL-4`), the live checklist as the hosted baseline, (f) the DPAs.
 
 - [x] REL-10 · Part 11a: apply `20261103120000_phone_channel.sql` to the dev project (after
       `REL-1`, by the operator: `supabase db push` as in `docs/RELEASE-RUNBOOK.md`). Check after
@@ -114,10 +118,10 @@ three sets of checks) and says how to paste the results back.
       inspected on 2026-10-29 (manifest, `sw.js` with `NetworkOnly` for both backend origins);
       the audit itself was not run.
 
-- [ ] REL-5 · Part 6: a voice call from the PWA's call button with the worker running
-      (`docs/VOICE.md` → Running locally): the agent is heard, the "Poziv u tijeku" banner shows,
-      mute and hang-up work, and `voice_calls` loses its row on hang-up. Not run on 2026-10-29
-      (the worker was not started in the session that built the button).
+- [x] REL-5 · Part 6: a voice call from the PWA's call button with the worker running. Done
+      2026-11-06 against the hosted worker (`REL-9`): three turns answered, the call ended with
+      `participant_disconnected` on hang-up; figures in `docs/VOICE.md` → Hosting. Mute and the
+      `voice_calls` row were not checked in that call.
 
 - [ ] REL-6 · Part 7: the operations pieces nobody has run. (a) `compose.dev.yml`: `supabase start`,
       export `SUPABASE_ANON_KEY`, put `api.env` and `voice.env` in `~/.config/va/`, then
