@@ -1,10 +1,24 @@
 # Backlog — core
 
-Ids: CORE-14 (next free)
+Ids: CORE-15 (next free)
 
 The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
 
 ## Open
+
+### CORE-14 · Medium · The model probes an empty catalogue with single-letter searches
+
+- **Check:** Confirmed (the first hosted smoke, 2026-11-06: "Koje artikle imamo?" against the dev
+  project, which has no demo rows)
+- **Where:** `packages/tools-demo/src/tools/search-items.ts`: the description says to call it
+  when the user "asks what items exist", and `query` accepts one character
+- **What happens:** with no rows the chat model ran seven searches (the vowels and `1`) before
+  answering, so the first answer took well over a minute and seven tool rounds of an Opus turn;
+  the same loop waits for any user whose role sees nothing
+- **Fix direction:** the description says the tool cannot list the catalogue and that an empty
+  result is the answer, not a reason to try another substring; `query` gets `.min(2)`; the
+  prompt rule for tool misses (`.claude/rules/prompts.md`) says one retry at most. A scenario
+  test through the loop asserts a single `search_items` call for an empty table
 
 ### CORE-13 · Low · OQ: text a sender hides with HTML styling reaches the model
 
