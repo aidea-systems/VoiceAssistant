@@ -134,14 +134,14 @@ printf 'Host github.com\n  IdentityFile /root/.ssh/va_deploy\n  IdentitiesOnly y
 ssh -T git@github.com
 ```
 
-Expect `Hi DavidKoljnrekaj/VoiceAssistant! You've successfully authenticated…` (the "shell
+Expect `Hi aidea-systems/VoiceAssistant! You've successfully authenticated…` (the "shell
 access" warning after it is normal).
 
 4. Clone and check:
 
 ```sh
 mkdir -p /opt/va && cd /opt/va
-git clone git@github.com:DavidKoljnrekaj/VoiceAssistant.git app
+git clone git@github.com:aidea-systems/VoiceAssistant.git app
 cd app && git log -1 --oneline
 ```
 
