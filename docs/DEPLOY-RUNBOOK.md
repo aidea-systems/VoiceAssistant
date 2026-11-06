@@ -266,8 +266,12 @@ On the VM, allow the origin and restart the API:
 
 ```sh
 sed -i "s#^CORS_ORIGINS=.*#CORS_ORIGINS=WEB_ORIGIN,http://localhost:5173#" /etc/va/api.env
-cd /opt/va/app && docker compose -f deploy/compose.prod.yml up -d api
+cd /opt/va/app && docker compose -f deploy/compose.prod.yml up -d --force-recreate api
 ```
+
+`--force-recreate` matters: a changed env file alone does not make compose replace the running
+container. `WEB_ORIGIN` is the production alias (`https://<project>.vercel.app`), not the
+per-deployment URL Vercel opens after a build.
 
 Supabase (`REL-8`): Dashboard → **Authentication** → **URL Configuration**: **Site URL** =
 `WEB_ORIGIN`; **Redirect URLs**: add `WEB_ORIGIN/**`, `http://localhost:5173/**` and
