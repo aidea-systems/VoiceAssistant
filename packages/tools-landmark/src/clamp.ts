@@ -38,12 +38,11 @@ function clipDeep(value: unknown): unknown {
   return value
 }
 
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g
+
 /** One line, control characters removed, at most `max` characters with `…` when cut. */
 export function clipText(text: string, max: number): string {
-  // eslint-disable-next-line no-control-regex
-  const clean = text
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const clean = text.replace(CONTROL_CHARS, '').replace(/\s+/g, ' ').trim()
   return clean.length > max ? `${clean.slice(0, max)}…` : clean
 }
