@@ -29,6 +29,7 @@
     "@va/db": "workspace:*",
     "@va/integrations": "workspace:*",
     "@va/tools-demo": "workspace:*",
+    "@va/tools-landmark": "workspace:*",
     "@va/tools-mail": "workspace:*",
     "onnxruntime-node": "1.24.3",
     "zod": "4.6.7"

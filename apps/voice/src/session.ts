@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  type AllowedTools,
   type AuthContext,
   type ErrorCode,
   errorReason,
@@ -113,6 +114,36 @@ export class CallSession {
     return this.userContext
   }
 
+  /**
+   * The packs' per-user gate for this caller (`ToolRegistry.allowedTools`: the names Landmark's
+   * role lets them call), read for every turn and by the warm-up; the pack behind it answers
+   * from a cache for a minute (invariant 7), so the read costs a request once per call in
+   * practice. A deadline, a failure or an abort means no restriction (null): dispatch then
+   * meets the pack's own error, spoken by the model from its rules.
+   */
+  async allowedToolsFor(ctx: AuthContext): Promise<AllowedTools> {
+    const t0 = performance.now()
+    const ids = { user_id: this.identity.userId, session_id: this.identity.sessionId }
+    const controller = new AbortController()
+    try {
+      const read = await withDeadline(
+        this.deps.registry.allowedTools(ctx, this.deps.channel, controller.signal),
+        this.userContextTimeoutMs,
+      )
+      if (read.timedOut) {
+        controller.abort()
+        log('warn', LOG_TAG, 'allowed tools timeout', { ...ids, timeout_ms: this.userContextTimeoutMs })
+        return null
+      }
+      if (read.value !== null)
+        log('info', LOG_TAG, 'allowed tools', { ...ids, ms: Math.round(performance.now() - t0), count: read.value.size })
+      return read.value
+    } catch (err) {
+      log('warn', LOG_TAG, 'allowed tools failed', { ...ids, reason: errorReason(err) })
+      return null
+    }
+  }
+
   private async readUserContext(ctx: AuthContext): Promise<readonly string[]> {
     const t0 = performance.now()
     const ids = { user_id: this.identity.userId, session_id: this.identity.sessionId }
@@ -195,7 +226,7 @@ export class CallSession {
     }
     const authMs = Math.round(performance.now() - t0)
     this.identity.touch()
-    const userContext = await this.userContextFor(ctx)
+    const [userContext, allowed] = await Promise.all([this.userContextFor(ctx), this.allowedToolsFor(ctx)])
     // A pending write: "da" carries its id into dispatch, "ne" settles it, anything else is a
     // plain turn with the write still waiting (Part 12b). Decided here, never by the model.
     const confirmation = await this.answerPending(io.userText, ids)
@@ -210,6 +241,7 @@ export class CallSession {
       end: io.end,
       signal: io.signal,
       confirmations: this.confirmations,
+      allowed,
       ...(confirmation ? { confirmation } : {}),
       onConfirm: (c) => {
         this.pendingConfirmation = c

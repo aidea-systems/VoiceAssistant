@@ -21,6 +21,7 @@
     "@va/db": "workspace:*",
     "@va/integrations": "workspace:*",
     "@va/tools-demo": "workspace:*",
+    "@va/tools-landmark": "workspace:*",
     "@va/tools-mail": "workspace:*",
     "hono": "4.13.13",
     "livekit-server-sdk": "2.19.1",

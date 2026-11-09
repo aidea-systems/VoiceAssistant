@@ -5,7 +5,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { log } from '@va/core'
 
 import { createApp } from './app.js'
-import { parseApiEnv } from './env.js'
+import { landmarkConfig, parseApiEnv } from './env.js'
 import { createMicrosoft } from './integrations/microsoft.js'
 import { createRegistry } from './tools.js'
 import { createLiveKit } from './voice/livekit.js'
@@ -18,7 +18,7 @@ const app = createApp({
     apiKey: env.ANTHROPIC_API_KEY,
     ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}),
   }),
-  registry: createRegistry(microsoft?.tokens ?? null),
+  registry: createRegistry(microsoft?.tokens ?? null, landmarkConfig(env)),
   env,
   livekit: createLiveKit(env),
   microsoft,
@@ -30,6 +30,7 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
     port: info.port,
     livekit: env.LIVEKIT_URL ? 'configured' : 'absent',
     microsoft: microsoft ? 'configured' : 'absent',
+    landmark: landmarkConfig(env) ? 'configured' : 'absent',
   })
 })
 

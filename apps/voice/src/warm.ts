@@ -5,7 +5,7 @@
 // so the request is byte for byte a turn's. Ported from Landmark's `voice-llm/warm`.
 import type Anthropic from '@anthropic-ai/sdk'
 
-import { type AuthContext, log, modelProfile } from '@va/core'
+import { type AllowedTools, type AuthContext, log, modelProfile } from '@va/core'
 
 import { LOG_TAG, type VoiceDeps, voiceLoopConfig } from './config.js'
 
@@ -21,9 +21,10 @@ export async function warm(
   deps: VoiceDeps,
   ctx: AuthContext,
   userContext: readonly string[] = [],
+  allowed: AllowedTools = null,
 ): Promise<WarmResult> {
   const t0 = performance.now()
-  const config = voiceLoopConfig(deps, ctx, undefined, userContext)
+  const config = voiceLoopConfig(deps, ctx, undefined, userContext, allowed)
   const profile = modelProfile(config.settings)
   const params = {
     model: config.settings.model,

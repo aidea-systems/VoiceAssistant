@@ -75,8 +75,27 @@ export const apiEnvSchema = z
         )
         .optional(),
     ),
+    // The Landmark pack (Part 14, decision 0018): both or none. Without them the pack is not
+    // registered, so neither its tools nor its rules reach the model.
+    /** `https://<ref>.supabase.co/functions/v1/assistant-api`; https outside localhost. */
+    LANDMARK_API_URL: optional.pipe(
+      z
+        .url()
+        .transform((v) => v.replace(/\/+$/, ''))
+        .refine(
+          (v) => v.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(v),
+          'must be https outside localhost',
+        )
+        .optional(),
+    ),
+    /** The HS256 key shared with the function (`ASSISTANT_API_SECRET` there), 32 bytes or more. */
+    LANDMARK_ASSISTANT_SECRET: optional.pipe(z.string().min(32).optional()),
   })
   .superRefine((env, ctx) => {
+    if ((env.LANDMARK_API_URL === undefined) !== (env.LANDMARK_ASSISTANT_SECRET === undefined)) {
+      const missing = env.LANDMARK_API_URL === undefined ? 'LANDMARK_API_URL' : 'LANDMARK_ASSISTANT_SECRET'
+      ctx.addIssue({ code: 'custom', path: [missing], message: 'required when the other LANDMARK_ variable is set' })
+    }
     const set = MICROSOFT_VARS.filter((name) => env[name] !== undefined)
     if (set.length > 0 && set.length < MICROSOFT_VARS.length) {
       for (const name of MICROSOFT_VARS.filter((n) => env[n] === undefined)) {
@@ -86,6 +105,16 @@ export const apiEnvSchema = z
   })
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>
+
+/** The Landmark pack's configuration from the environment, or null when the two variables are
+ * not set (the pack is then not registered: no Landmark tools, no Landmark rules). */
+export function landmarkConfig(env: Pick<ApiEnv, 'LANDMARK_API_URL' | 'LANDMARK_ASSISTANT_SECRET'>): {
+  url: string
+  secret: string
+} | null {
+  if (!env.LANDMARK_API_URL || !env.LANDMARK_ASSISTANT_SECRET) return null
+  return { url: env.LANDMARK_API_URL, secret: env.LANDMARK_ASSISTANT_SECRET }
+}
 
 export function parseApiEnv(source: Record<string, string | undefined>): ApiEnv {
   const result = apiEnvSchema.safeParse(source)
