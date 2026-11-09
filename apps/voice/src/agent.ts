@@ -57,20 +57,26 @@ const deps: VoiceDeps = {
   }),
   registry: createRegistry(createVoiceTokenStore(env, () => new Date())),
   channel: 'voice',
-  settings: channelSettings('voice', {
-    AI_VOICE_MODEL: env.AI_VOICE_MODEL,
-    AI_VOICE_EFFORT: env.AI_VOICE_EFFORT,
-  }),
+  settings: {
+    ...channelSettings('voice', {
+      AI_VOICE_MODEL: env.AI_VOICE_MODEL,
+      AI_VOICE_EFFORT: env.AI_VOICE_EFFORT,
+    }),
+    fillerAfterMs: env.FILLER_AFTER_MS,
+  },
   clock: () => new Date(),
 }
 /** The phone channel: voice's prompt, allowlist and settings, with its own overrides. */
 const phoneDeps: VoiceDeps = {
   ...deps,
   channel: 'phone',
-  settings: channelSettings('phone', {
-    AI_PHONE_MODEL: env.AI_PHONE_MODEL,
-    AI_PHONE_EFFORT: env.AI_PHONE_EFFORT,
-  }),
+  settings: {
+    ...channelSettings('phone', {
+      AI_PHONE_MODEL: env.AI_PHONE_MODEL,
+      AI_PHONE_EFFORT: env.AI_PHONE_EFFORT,
+    }),
+    fillerAfterMs: env.FILLER_AFTER_MS,
+  },
 }
 const TUNING = {
   endpoint_delay_ms: env.ENDPOINT_DELAY_MS,
@@ -152,20 +158,6 @@ export default defineAgent<UserData>({
     ids.user_id = identity.userId
     log('info', LOG_TAG, 'call accepted', ids)
 
-    // While the greeting plays: resolve the caller once and write the prompt cache.
-    const t0 = Date.now()
-    void identity
-      .ctx()
-      .then((auth) => warm(callDeps, auth))
-      .then((r) => metrics.write('warm.jsonl', { room, ...r }))
-      .catch((err: unknown) => {
-        log('warn', LOG_TAG, 'warm failed', {
-          ...ids,
-          ms: Date.now() - t0,
-          reason: err instanceof Error ? err.constructor.name : typeof err,
-        })
-      })
-
     // A quiet caller is still a live call: the row's idle window (3 min) is kept open while the
     // participant is connected, not only when a turn runs.
     const keepalive = setInterval(() => identity.touch(), KEEPALIVE_MS)
@@ -209,6 +201,21 @@ export default defineAgent<UserData>({
     const call = new CallSession(callDeps, identity, {
       onEnded: (reason) => hangUp.afterSpeech(reason, reply?.waitForPlayout() ?? NO_SPEECH),
     })
+    // While the greeting plays: resolve the caller once, read the packs' per-user context (the
+    // catalogue; its read logs its own failure and the call goes without it) and write the prompt
+    // cache with the blocks a turn will send.
+    const t0 = Date.now()
+    void identity
+      .ctx()
+      .then(async (auth) => warm(callDeps, auth, await call.userContextFor(auth)))
+      .then((r) => metrics.write('warm.jsonl', { room, ...r }))
+      .catch((err: unknown) => {
+        log('warn', LOG_TAG, 'warm failed', {
+          ...ids,
+          ms: Date.now() - t0,
+          reason: err instanceof Error ? err.constructor.name : typeof err,
+        })
+      })
     let reply: voice.SpeechHandle | null = null
     session.on(voice.AgentSessionEventTypes.SpeechCreated, (ev) => {
       if (ev.source === 'generate_reply') reply = ev.speechHandle

@@ -1,7 +1,8 @@
 // The warm-up: once per call, right after dispatch and while the greeting plays, a
 // `max_tokens: 0` request with the exact model, system, tools, thinking and effort of a real
 // turn (they are all part of the cached prefix), so the first question pays neither a cold
-// process nor a cache miss. Ported from Landmark's `voice-llm/warm`.
+// process nor a cache miss. The caller passes the packs' per-user blocks it read for the call,
+// so the request is byte for byte a turn's. Ported from Landmark's `voice-llm/warm`.
 import type Anthropic from '@anthropic-ai/sdk'
 
 import { type AuthContext, log, modelProfile } from '@va/core'
@@ -16,9 +17,13 @@ export interface WarmResult {
 
 /** Writes the prompt cache for this caller's settings. Throws on failure: a failed warm-up costs
  * only the latency it would have saved, so the caller logs and moves on. */
-export async function warm(deps: VoiceDeps, ctx: AuthContext): Promise<WarmResult> {
+export async function warm(
+  deps: VoiceDeps,
+  ctx: AuthContext,
+  userContext: readonly string[] = [],
+): Promise<WarmResult> {
   const t0 = performance.now()
-  const config = voiceLoopConfig(deps, ctx)
+  const config = voiceLoopConfig(deps, ctx, undefined, userContext)
   const profile = modelProfile(config.settings)
   const params = {
     model: config.settings.model,

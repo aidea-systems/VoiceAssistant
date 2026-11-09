@@ -35,12 +35,20 @@ export function dateLine(now: Date): string {
   return `Danas je ${day.replace(/\.$/, '')}.`
 }
 
-/** The per-user block: identity and role, plus the role's scope note. <!-- needs native review --> */
-export function buildUserContext(ctx: Pick<AuthContext, 'email' | 'role'>): string {
+/** The per-user block: identity and role, plus the role's scope note, then the packs' per-user
+ * context blocks (`ToolRegistry.userContext`: the caller's likely entities, read as the user)
+ * in the order given, each as its own paragraph. <!-- needs native review --> */
+export function buildUserContext(
+  ctx: Pick<AuthContext, 'email' | 'role'>,
+  packBlocks: readonly string[] = [],
+): string {
   const identifier = ctx.email ?? 'nepoznat korisnik'
   const scope =
     ctx.role === 'member'
       ? ' Korisnikov pristup podacima ograničen je njegovom ulogom; podatke koje uloga ne obuhvaća ne možete dohvatiti.'
       : ''
-  return `## Korisnik\nKorisnik: ${identifier}, uloga: ${ctx.role}.${scope}`
+  return [
+    `## Korisnik\nKorisnik: ${identifier}, uloga: ${ctx.role}.${scope}`,
+    ...packBlocks.filter(Boolean),
+  ].join('\n\n')
 }

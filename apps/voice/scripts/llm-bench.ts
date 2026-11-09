@@ -97,19 +97,29 @@ async function openSession(ctx: AuthContext): Promise<{ id: string; close: () =>
 }
 
 interface Result {
+  /** The first spoken text, the filler included. */
   first_text_ms: number | null
+  /** The first text of the answer itself: what a filler cannot move. */
+  first_answer_ms: number | null
   total_ms: number
   rounds: number
   cache_read_first: number
   spoken_len: number
-  /** Paragraph breaks the model wrote into the spoken text (the filler's own break, present on
-   * every tool answer, not counted): each one is a text-to-speech segment seam in the worker. */
+  /** Paragraph breaks the model wrote into the spoken text (the filler's own break, present
+   * whenever a filler was spoken, not counted): each one is a text-to-speech segment seam in the
+   * worker. */
   breaks: number
   outcome: VoiceTurnResult['outcome']
   spoken: string
 }
 
-async function ask(deps: VoiceDeps, ctx: AuthContext, sessionId: string, q: Question): Promise<Result> {
+async function ask(
+  deps: VoiceDeps,
+  ctx: AuthContext,
+  sessionId: string,
+  q: Question,
+  userContext: readonly string[],
+): Promise<Result> {
   let firstCacheRead: number | null = null
   const result = await runVoiceTurn({
     deps: {
@@ -124,6 +134,7 @@ async function ask(deps: VoiceDeps, ctx: AuthContext, sessionId: string, q: Ques
     say: async () => {},
     end: async () => {},
     signal: new AbortController().signal,
+    userContext,
   })
   await result.persisted
   // The first call's cache read is what the warm-up and the static prompt buy.
@@ -131,11 +142,15 @@ async function ask(deps: VoiceDeps, ctx: AuthContext, sessionId: string, q: Ques
   const rounds = result.marks.filter((m) => m.name === 'model_call').length
   return {
     first_text_ms: result.firstTextMs,
+    first_answer_ms: result.firstAnswerMs,
     total_ms: result.totalMs,
     rounds,
     cache_read_first: firstCacheRead,
     spoken_len: result.spoken.length,
-    breaks: Math.max(0, (result.spoken.match(/\n\n/g) ?? []).length - (rounds > 1 ? 1 : 0)),
+    breaks: Math.max(
+      0,
+      (result.spoken.match(/\n\n/g) ?? []).length - (result.firstTextMs !== result.firstAnswerMs ? 1 : 0),
+    ),
     outcome: result.outcome,
     spoken: result.spoken,
   }
@@ -156,12 +171,17 @@ async function main(): Promise<void> {
   }
   const session = await openSession(ctx)
   const show = process.env.SHOW_ANSWERS === '1'
+  // As the worker does once per call: the packs' per-user blocks (the catalogue), as the user.
+  const userContext = await deps.registry.userContext(ctx, deps.channel, new AbortController().signal)
+  console.log(
+    `user context: ${userContext.length} block(s), ${userContext.reduce((n, b) => n + b.length, 0)} chars`,
+  )
   try {
     if (process.argv[2] === 'first') {
-      const warmed = process.argv[3] === 'warm' ? await warm(deps, ctx) : null
+      const warmed = process.argv[3] === 'warm' ? await warm(deps, ctx, userContext) : null
       if (warmed) await new Promise((r) => setTimeout(r, 3000))
       const q = questions()[0]!
-      const r = await ask(deps, ctx, session.id, q)
+      const r = await ask(deps, ctx, session.id, q, userContext)
       const { spoken: _spoken, ...row } = r
       logRow({ mode: 'first', warm: warmed !== null, warmed, id: q.id, model: deps.settings.model, ...row })
       console.log(JSON.stringify({ warm: warmed !== null, warmed, ...row }))
@@ -172,12 +192,12 @@ async function main(): Promise<void> {
     const rows: Array<{ id: string; r: Result }> = []
     for (let run = 0; run < repeats; run++) {
       for (const q of qs) {
-        const r = await ask(deps, ctx, session.id, q)
+        const r = await ask(deps, ctx, session.id, q, userContext)
         rows.push({ id: q.id, r })
         const { spoken: _spoken, ...row } = r
         logRow({ run, id: q.id, model: deps.settings.model, effort: deps.settings.effort, ...row })
         console.log(
-          `${q.id.padEnd(7)} first ${sec(r.first_text_ms ?? NaN)}  total ${sec(r.total_ms)}  rounds ${r.rounds}  cache_read ${r.cache_read_first}  ${r.outcome}${show ? `  | ${r.spoken.slice(0, 90)}` : ''}`,
+          `${q.id.padEnd(7)} first ${sec(r.first_text_ms ?? NaN)}  answer ${sec(r.first_answer_ms ?? NaN)}  total ${sec(r.total_ms)}  rounds ${r.rounds}  cache_read ${r.cache_read_first}  ${r.outcome}${show ? `  | ${r.spoken.slice(0, 90)}` : ''}`,
         )
       }
     }
@@ -185,16 +205,19 @@ async function main(): Promise<void> {
     for (const q of qs) {
       const rs = rows.filter((x) => x.id === q.id).map((x) => x.r)
       const first = rs.map((r) => r.first_text_ms ?? NaN)
+      const answer = rs.map((r) => r.first_answer_ms ?? NaN)
       const total = rs.map((r) => r.total_ms)
       console.log(
-        `  ${q.id.padEnd(7)} first ${sec(median(first))} (${range(first)})  total ${sec(median(total))} (${range(total)})  rounds ${median(rs.map((r) => r.rounds))}`,
+        `  ${q.id.padEnd(7)} first ${sec(median(first))} (${range(first)})  answer ${sec(median(answer))} (${range(answer)})  total ${sec(median(total))} (${range(total)})  rounds ${median(rs.map((r) => r.rounds))}`,
       )
     }
     const all = rows.map((x) => x.r)
     const first = all.map((r) => r.first_text_ms ?? NaN)
+    const answer = all.map((r) => r.first_answer_ms ?? NaN)
     const total = all.map((r) => r.total_ms)
     console.log(
-      `\nall ${all.length} (${deps.settings.model}, ${deps.settings.effort}): first text p50 ${sec(pct(first, 50))} p95 ${sec(pct(first, 95))}; ` +
+      `\nall ${all.length} (${deps.settings.model}, ${deps.settings.effort}, filler after ${deps.settings.fillerAfterMs} ms): first text p50 ${sec(pct(first, 50))} p95 ${sec(pct(first, 95))}; ` +
+        `first answer p50 ${sec(pct(answer, 50))} p95 ${sec(pct(answer, 95))}; ` +
         `whole answer p50 ${sec(pct(total, 50))} p95 ${sec(pct(total, 95))}; ` +
         `rounds ${(all.reduce((s, r) => s + r.rounds, 0) / all.length).toFixed(2)}; ` +
         `paragraph breaks in ${all.filter((r) => r.breaks > 0).length}/${all.length} answers; ` +

@@ -25,6 +25,11 @@ export interface ChannelSettings {
    * spoken anyway (`SpokenTextSink`, VOICE-8). Chat's SSE sink holds nothing; the value is the
    * same so one shape serves every channel. */
   holdMs: number
+  /** How long the spoken sink waits for the model's first token before it speaks a short filler
+   * so the caller hears something (Landmark's tuning step 5); 0 keeps the filler to the first
+   * tool call only. Chat has no spoken sink; the value is there so one shape serves every
+   * channel. */
+  fillerAfterMs: number
 }
 
 const VOICE_DEFAULTS: ChannelSettings = {
@@ -38,6 +43,7 @@ const VOICE_DEFAULTS: ChannelSettings = {
   historyMaxRows: 20,
   compaction: false,
   holdMs: 200,
+  fillerAfterMs: 700,
 }
 
 export const CHANNEL_DEFAULTS: Record<Channel, ChannelSettings> = {
@@ -52,6 +58,7 @@ export const CHANNEL_DEFAULTS: Record<Channel, ChannelSettings> = {
     historyMaxRows: 200,
     compaction: false,
     holdMs: 200,
+    fillerAfterMs: 0,
   },
   voice: { ...VOICE_DEFAULTS },
   phone: { ...VOICE_DEFAULTS },

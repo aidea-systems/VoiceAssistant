@@ -17,7 +17,8 @@ browser (call button) ──POST /voice/sessions──▶ apps/api ── ai_ses
                                      ├─ VAD  Silero (barge-in), or Soniox's first interim words (INTERRUPT_ON)
                                      ├─ LLM  AssistantAgent.llmNode → @va/core runOrchestrationLoop + SpokenTextSink, in-process
                                      │        tools run as the caller (RLS); rows written after the answer; warm-up on dispatch
-                                     └─ TTS  ElevenLabs eleven_v4_turbo, Karlo; a flush after the filler so it is heard at once
+                                     └─ TTS  ElevenLabs eleven_v4_turbo, Karlo; a flush after the filler (after 700 ms of model
+                                              silence, or on the first tool call) so it is heard at once
 ```
 
 ## Layout
@@ -176,6 +177,7 @@ Landmark's measured defaults; change one only with a measurement (`/bench-voice`
 | `VAD_THRESHOLD`          | 0.3                    | Silero activation threshold (its own is 0.5). Also fires on breath: 2 of 40 tries stopped the agent 0.22 s before the first word                 |
 | `VAD_MIN_SPEECH_MS`      | 30                     | Silero minimum speech (its own is 50)                                                                                                            |
 | `IDENTITY_CACHE_MS`      | 60000                  | Per-call identity re-read interval; the schema caps it at a minute (invariant 7)                                                                 |
+| `FILLER_AFTER_MS`        | 700                    | Model silence before the early filler ("Samo trenutak."); 0 keeps the filler to the first tool call. Measured 2026-11-09 (below)                 |
 | `PHONE_PIN_ROLES`        | `admin,member`         | Roles that must enter a keypad PIN on the phone channel: every role during the pilot (decision 0013)                                             |
 | `PHONE_PIN_TIMEOUT_MS`   | 10000                  | The keypad wait before the one re-prompt, then the refusal (Part 11b)                                                                            |
 | `PHONE_PIN_MAX_FAILURES` | 3                      | Wrong PINs in a row that lock the number                                                                                                         |
@@ -203,18 +205,33 @@ in-process worker removes the function's cold start (~1.5 s) and the HTTP hop.
 
 ### Measurements
 
-| Date       | Commit    | What changed                                             | Model                      | First text p50 / p95 | Whole answer p50 / p95 | Rounds | n   |
-| ---------- | --------- | -------------------------------------------------------- | -------------------------- | -------------------- | ---------------------- | ------ | --- |
-| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                  | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s      | 5.94 s / 9.37 s        | 2.69   | 36  |
-| 2026-10-29 | `e57f31c` | demo tables seeded                                       | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s      | 4.22 s / 9.08 s        | 2.08   | 36  |
-| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)            | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s      | 4.33 s / 8.76 s        | 2.06   | 36  |
-| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23) | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s      | 4.18 s / 13.79 s       | 2.03   | 36  |
-| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept) | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s      | 4.02 s / 8.81 s        | 2.06   | 36  |
-| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                     | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s      | 4.09 s / 9.23 s        | 2.03   | 36  |
-| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)      | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s      | 4.70 s / 10.80 s       | 2.03   | 36  |
-| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules         | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s      | 4.34 s / 9.07 s        | 2.03   | 36  |
-| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)   | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s      | 4.84 s / 8.30 s        | 2.08   | 36  |
-| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule         | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s      | 4.50 s / 8.70 s        | 2.08   | 36  |
+| Date       | Commit    | What changed                                             | Model                      | First text p50 / p95                                       | Whole answer p50 / p95 | Rounds | n   |
+| ---------- | --------- | -------------------------------------------------------- | -------------------------- | ---------------------------------------------------------- | ---------------------- | ------ | --- |
+| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                  | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s                                            | 5.94 s / 9.37 s        | 2.69   | 36  |
+| 2026-10-29 | `e57f31c` | demo tables seeded                                       | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s                                            | 4.22 s / 9.08 s        | 2.08   | 36  |
+| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)            | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s                                            | 4.33 s / 8.76 s        | 2.06   | 36  |
+| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23) | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s                                            | 4.18 s / 13.79 s       | 2.03   | 36  |
+| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept) | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s                                            | 4.02 s / 8.81 s        | 2.06   | 36  |
+| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                     | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s                                            | 4.09 s / 9.23 s        | 2.03   | 36  |
+| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)      | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s                                            | 4.70 s / 10.80 s       | 2.03   | 36  |
+| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules         | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s                                            | 4.34 s / 9.07 s        | 2.03   | 36  |
+| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)   | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s                                            | 4.84 s / 8.30 s        | 2.08   | 36  |
+| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule         | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s                                            | 4.50 s / 8.70 s        | 2.08   | 36  |
+| 2026-11-09 | `88025f0` | baseline for the early filler and the catalogue block    | `claude-sonnet-5-5`, `low` | 1.64 s / 2.80 s                                            | 4.09 s / 7.46 s        | 2.06   | 36  |
+| 2026-11-09 | `14ed3ab` | early filler 700 ms + the catalogue in the user block    | `claude-sonnet-5-5`, `low` | 0.70 s / 0.70 s (the filler); first answer 1.49 s / 2.64 s | 1.74 s / 2.77 s        | 1.00   | 36  |
+
+**The early filler and the catalogue block (2026-11-09).** Two levers from Landmark's tuning
+list, measured together on the local stack, three repeats, the nine seeded items. The early
+filler fixes the first sound at `FILLER_AFTER_MS` (0.70 s on every utterance, before the endpoint
+delay and the TTS); the bench therefore reports the first answer text as well, the figure a
+filler cannot move. The catalogue block (540 characters, uncached) turned every catalogue
+question into one model round: first answer p50 1.49 s against a first text of 1.64 s before
+(the same order, now without a tool in front of it), whole answer p50 4.09 → 1.74 s, p95
+7.46 → 2.77 s, rounds 2.06 → 1.00. The block costs about 460 uncached input tokens per call.
+What the bench does not judge is the answers themselves: with the block the model answers from
+the prompt, so a run with `SHOW_ANSWERS=1` is read before this is called done on the live call.
+The paragraph-break count now subtracts the filler's own break whenever a filler was spoken, not
+only on tool answers.
 
 **Part 13b, the mail pack on voice.** Both runs on the local stack with the seed member, three
 repeats each, one shell (`~/.config/va/voice.local.env` sourced after `voice.env`). The bench
@@ -351,12 +368,14 @@ The writer refuses an entry with a `text`, `transcript`, `heard` or `said` key (
 **`llm-bench.ts`** times the engine in-process, no speech in the way, as a real user of the
 configured Supabase project: `bench/questions.hr.txt` (ten product-neutral questions the demo
 pack answers, plus two small-talk lines) × N repeats, each on a fresh single-turn conversation,
-through the same `runVoiceTurn` as the worker. It opens a voice session of its own and deletes
-it at the end. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
+through the same `runVoiceTurn` as the worker, with the packs' per-user context read once as
+the worker reads it per call. It opens a voice session of its own and deletes it at the end.
+`first` is the first spoken text, the early filler included once `FILLER_AFTER_MS` is on;
+`answer` is the first text of the answer itself, the figure a filler cannot move. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
 `AI_VOICE_MODEL` / `AI_VOICE_EFFORT` to compare models; `LABEL` tags the rows.
 
 ```
-pnpm --filter @va/voice bench 3            # p50/p95 first text and whole answer, per-question median with min–max, rounds, breaks, cache hits
+pnpm --filter @va/voice bench 3            # p50/p95 first text (filler included), first answer and whole answer, per-question median with min–max, rounds, breaks, cache hits
 pnpm --filter @va/voice bench first warm   # one call's first question after the warm-up (cold-start runs)
 SHOW_ANSWERS=1 pnpm --filter @va/voice bench 1   # prints the answers to the console (never to the log)
 ```

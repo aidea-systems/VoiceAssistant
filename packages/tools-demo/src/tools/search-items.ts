@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { defineTool } from '@va/core'
 
-import { demoClient, escapeLike, NO_STAR, VOICE_MAX_ITEMS } from '../demo-db.js'
+import { demoClient, escapeLike, isSpoken, NO_STAR, VOICE_MAX_ITEMS } from '../demo-db.js'
 
 const MAX_LIMIT = 100
 
@@ -27,9 +27,9 @@ export const searchItems = defineTool({
   requiredRoles: ['admin', 'member'],
   readOnly: true,
   async handler(input, ctx, extras, signal) {
-    // Voice: at most five items, no ids or timestamps to read aloud. The cap is in the query,
-    // not only in the schema.
-    const voice = extras.channel === 'voice'
+    // Spoken channels: at most five items, no ids or timestamps to read aloud. The cap is in the
+    // query, not only in the schema.
+    const voice = isSpoken(extras.channel)
     const limit = Math.min(input.limit ?? 20, voice ? VOICE_MAX_ITEMS : MAX_LIMIT)
     const columns = voice ? 'name, category, price' : 'id, name, category, price, updated_at'
     const { data, error, count } = await demoClient(ctx)

@@ -100,6 +100,9 @@ export interface VoiceTurnInput {
    * the right leaf. */
   persistAfter?: Promise<unknown>
   pickFiller?: () => string
+  pickEarlyFiller?: () => string
+  /** The packs' per-user blocks for this caller (`CallSession.userContextFor`), read once per call. */
+  userContext?: readonly string[]
 }
 
 /** A loop mark and when it fired, in ms since the turn started. */
@@ -112,7 +115,10 @@ export interface VoiceTurnResult {
   outcome: TurnOutcome
   /** Everything spoken, after `speakable()`. */
   spoken: string
+  /** When the first text, a filler included, went to `say`. */
   firstTextMs: number | null
+  /** When the first text of the answer itself went to `say` (no filler counts). */
+  firstAnswerMs: number | null
   totalMs: number
   /** The loop's marks in order, each with its time: model time against tool time. */
   marks: TimedMark[]
@@ -127,10 +133,16 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
   const { deps, ctx, sessionId, userText, requestId, signal } = input
   const t0 = performance.now()
   const ids = { request_id: requestId, user_id: ctx.userId, session_id: sessionId }
-  const config = voiceLoopConfig(deps, ctx, input.confirmations)
+  const config = voiceLoopConfig(deps, ctx, input.confirmations, input.userContext)
   const settings = deps.settings
 
-  const sink = new SpokenTextSink(input.say, input.end, input.pickFiller, settings.holdMs, input.onConfirm)
+  const sink = new SpokenTextSink(input.say, input.end, {
+    ...(input.pickFiller ? { pickFiller: input.pickFiller } : {}),
+    ...(input.pickEarlyFiller ? { pickEarlyFiller: input.pickEarlyFiller } : {}),
+    holdMs: settings.holdMs,
+    fillerAfterMs: settings.fillerAfterMs,
+    ...(input.onConfirm ? { onConfirm: input.onConfirm } : {}),
+  })
   const controller = new AbortController()
   const state: { outcome: TurnOutcome } = { outcome: 'completed' }
   const cancel = (why: TurnOutcome): void => {
@@ -224,6 +236,7 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
     spoken: sink.spoken,
     rows: [userRow, ...store.rows],
     firstTextMs: sink.firstOutputAt === null ? null : Math.round(sink.firstOutputAt - t0),
+    firstAnswerMs: sink.firstAnswerAt === null ? null : Math.round(sink.firstAnswerAt - t0),
     totalMs: Math.round(performance.now() - t0),
     marks,
     usage,

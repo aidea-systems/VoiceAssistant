@@ -66,6 +66,9 @@ export const voiceEnvSchema = z
     VAD_MIN_SPEECH_MS: int(30, 0, 2000),
     /** Per-call identity re-read interval; capped at a minute. */
     IDENTITY_CACHE_MS: int(IDENTITY_CACHE_MAX_MS, 0, IDENTITY_CACHE_MAX_MS),
+    /** How long the sink waits for the model's first token before the early filler; 0 keeps the
+     * filler to the first tool call (measured 2026-11-09, docs/VOICE.md → Settings). */
+    FILLER_AFTER_MS: int(700, 0, 3000),
     /** Where the JSONL metrics go; defaults to `apps/voice/logs` (gitignored). */
     VOICE_LOGS_DIR: optional,
     /** The phone channel (Part 11). Roles that must enter a keypad PIN, comma-separated; every

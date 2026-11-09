@@ -7,18 +7,21 @@
 //     is held until the next token shows what follows it: if a tool call starts instead, the
 //     sentence was the model announcing a lookup ("Trebam prvo pronaći projekt…"), which the
 //     filler already covers, so it is dropped. A finished sentence that nothing follows within
-//     `HOLD_MS` is spoken anyway (VOICE-8): a one-sentence answer must not wait for the end of
+//     `holdMs` is spoken anyway (VOICE-8): a one-sentence answer must not wait for the end of
 //     the generation, and a lookup the model announces that late is spoken before the filler;
-//   - toolStarting speaks one filler sentence per request, followed by a paragraph break, so the
-//     caller does not sit in silence while tools run;
+//   - the first filler of a request is spoken either when the model has produced nothing for
+//     `fillerAfterMs` (a short neutral one, so the caller hears something inside the first-sound
+//     budget whether a lookup or a direct answer follows) or when the first tool call starts
+//     (the lookup filler), whichever comes first; one filler per request, followed by a
+//     paragraph break so the TTS speaks it at once;
 //   - textBlock repeats text already streamed as deltas, so it is spoken only when it was not
 //     (the loop's own messages: the iteration cap, truncation);
 //   - toolCall and toolResult are not spoken; a confirm (a write waiting for the caller's yes)
 //     speaks the preview's summary verbatim, then the model's question follows (VOICE-19);
 //   - done flushes what is pending and, after a refusal with nothing said, speaks the refusal
 //     line; error flushes and speaks the Croatian message. Both then call `end`;
-//   - abort (a barge-in: the loop returns silently) disarms the hold and drops what is pending,
-//     so nothing is spoken after the owner has given up on the turn.
+//   - abort (a barge-in: the loop returns silently) disarms both timers and drops what is
+//     pending, so nothing is spoken after the owner has given up on the turn.
 
 import { CHANNEL_DEFAULTS } from '../channel.js'
 import { MESSAGES_HR, type ErrorCode } from '../errors.js'
@@ -26,13 +29,17 @@ import { errorReason, log } from '../log.js'
 import type { EventSink, Usage, ConfirmEvent } from '../loop/ports.js'
 import { speakable } from './speakable.js'
 
-/** Spoken once per request when the first tool call starts. Written without an ellipsis: some
- * TTS engines read "…" literally. <!-- needs native review --> */
+/** Spoken when the first tool call starts and nothing has been said yet. Written without an
+ * ellipsis: some TTS engines read "…" literally. <!-- needs native review --> */
 export const FILLERS_HR: readonly string[] = [
   'Samo trenutak, provjeravam.',
   'Trenutak, gledam podatke.',
   'Samo malo, dohvaćam to.',
 ]
+
+/** Spoken when the model has produced nothing for `fillerAfterMs`: neutral, because at that
+ * point it is not known whether a lookup or a direct answer follows. <!-- needs native review --> */
+export const EARLY_FILLERS_HR: readonly string[] = ['Samo trenutak.', 'Trenutak, molim.']
 
 export type SpokenEnd = 'done' | 'error'
 
@@ -42,8 +49,27 @@ export type SpokenEnd = 'done' | 'error'
  * call's `between_tools` thinking takes longer, which is the trade-off S13c pins. */
 export const HOLD_MS = CHANNEL_DEFAULTS.voice.holdMs
 
-function randomFiller(): string {
-  return FILLERS_HR[Math.floor(Math.random() * FILLERS_HR.length)]!
+/** How long the sink waits for the model's first token before the early filler (the voice
+ * channel's `fillerAfterMs`; 0 disables it). Measured on 2026-11-09: the model's first event
+ * comes 1.0–1.5 s after the call, so without it the first sound is 2.3–2.6 s after the end of
+ * speech; with the endpoint delay and the TTS in front and behind, 700 ms lands the first sound
+ * inside the 1.5 s budget. */
+export const FILLER_AFTER_MS = CHANNEL_DEFAULTS.voice.fillerAfterMs
+
+function pick(pool: readonly string[]): string {
+  return pool[Math.floor(Math.random() * pool.length)]!
+}
+
+export interface SpokenSinkOptions {
+  /** The lookup filler (random from `FILLERS_HR` by default; tests pin one). */
+  pickFiller?: () => string
+  /** The early filler (random from `EARLY_FILLERS_HR` by default; tests pin one). */
+  pickEarlyFiller?: () => string
+  holdMs?: number
+  /** 0 keeps the filler to the first tool call. */
+  fillerAfterMs?: number
+  /** A write waits for the caller's answer: the owner keeps the id for the next turn. */
+  onConfirm?: (c: ConfirmEvent) => void
 }
 
 export class SpokenTextSink implements EventSink {
@@ -53,24 +79,39 @@ export class SpokenTextSink implements EventSink {
   private confirmed = false
   private holding = true
   private holdTimer: ReturnType<typeof setTimeout> | null = null
+  private fillerTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly pickFiller: () => string
+  private readonly pickEarlyFiller: () => string
+  private readonly holdMs: number
+  private readonly onConfirm: ((c: ConfirmEvent) => void) | undefined
   /** Everything spoken so far, after `speakable()`. */
   spoken = ''
-  /** When the first text went to `say` (`performance.now()`), for the owner's timing log. */
+  /** When the first text went to `say` (`performance.now()`), filler included, for the owner's
+   * timing log (`first_text_ms`). */
   firstOutputAt: number | null = null
+  /** When the first text that was not a filler went to `say`: the answer itself
+   * (`first_answer_ms`), the figure a filler cannot improve. */
+  firstAnswerAt: number | null = null
 
+  /** The request starts when the sink is built: the early filler's clock runs from here. */
   constructor(
     private readonly sayText: (text: string) => Promise<void>,
     private readonly end: (reason: SpokenEnd) => Promise<void>,
-    private readonly pickFiller: () => string = randomFiller,
-    private readonly holdMs: number = HOLD_MS,
-    /** A write waits for the caller's answer: the owner keeps the id for the next turn. */
-    private readonly onConfirm?: (c: ConfirmEvent) => void,
-  ) {}
+    options: SpokenSinkOptions = {},
+  ) {
+    this.pickFiller = options.pickFiller ?? (() => pick(FILLERS_HR))
+    this.pickEarlyFiller = options.pickEarlyFiller ?? (() => pick(EARLY_FILLERS_HR))
+    this.holdMs = options.holdMs ?? HOLD_MS
+    this.onConfirm = options.onConfirm
+    const after = options.fillerAfterMs ?? FILLER_AFTER_MS
+    if (after > 0) this.armFiller(after)
+  }
 
-  private async say(text: string): Promise<void> {
+  private async say(text: string, filler = false): Promise<void> {
     if (!text) return
     const content = speakable(text)
     this.firstOutputAt ??= performance.now()
+    if (!filler) this.firstAnswerAt ??= performance.now()
     this.spoken += content
     await this.sayText(content)
   }
@@ -96,6 +137,8 @@ export class SpokenTextSink implements EventSink {
   }
 
   async textDelta(text: string): Promise<void> {
+    // Text is coming: no filler is needed before it.
+    this.clearFiller()
     this.streamed += text
     this.pending += text
     if (this.holding) {
@@ -135,16 +178,42 @@ export class SpokenTextSink implements EventSink {
     else await this.flushWords()
   }
 
-  /** The owner gave up on the turn (a barge-in): the hold is disarmed and the pending text
+  private armFiller(afterMs: number): void {
+    this.fillerTimer = setTimeout(() => {
+      this.fillerTimer = null
+      // Off the loop's call chain, like the hold's release.
+      this.speakEarlyFiller().catch((err: unknown) => {
+        log('warn', '[core]', 'early filler failed', { reason: errorReason(err) })
+      })
+    }, afterMs)
+  }
+
+  private clearFiller(): void {
+    if (this.fillerTimer === null) return
+    clearTimeout(this.fillerTimer)
+    this.fillerTimer = null
+  }
+
+  /** Nothing has arrived from the model: the caller hears a short neutral sentence. A tool
+   * call that starts later speaks no second filler. */
+  private async speakEarlyFiller(): Promise<void> {
+    if (this.fillerSpoken || this.streamed || this.spoken) return
+    this.fillerSpoken = true
+    await this.say(`${this.pickEarlyFiller()}\n\n`, true)
+  }
+
+  /** The owner gave up on the turn (a barge-in): both timers are disarmed and the pending text
    * dropped, so a timer armed before the abort speaks nothing after it. */
   abort(): void {
     this.clearHold()
+    this.clearFiller()
     this.pending = ''
   }
 
   async toolStarting(): Promise<void> {
     // Held text followed by a tool call is an announcement of the lookup.
     this.clearHold()
+    this.clearFiller()
     if (this.holding) this.pending = ''
     this.holding = true
     if (this.fillerSpoken) return
@@ -152,10 +221,11 @@ export class SpokenTextSink implements EventSink {
     await this.flushAll()
     // The paragraph break makes the TTS synthesise the filler at once: it holds a sentence back
     // until more text arrives, and the answer only comes after the tools have run.
-    await this.say(`${this.joiner()}${this.pickFiller()}\n\n`)
+    await this.say(`${this.joiner()}${this.pickFiller()}\n\n`, true)
   }
 
   async textBlock(text: string, _messageId: string): Promise<void> {
+    this.clearFiller()
     if (this.streamed.startsWith(text)) {
       this.streamed = this.streamed.slice(text.length)
       return
@@ -177,6 +247,7 @@ export class SpokenTextSink implements EventSink {
     // The id first: a failed `say` must not lose the write the caller is about to answer.
     this.onConfirm?.(c)
     this.clearHold()
+    this.clearFiller()
     await this.flushAll()
     // The paragraph break makes the TTS speak the summary at once, before the model's question.
     await this.say(`${this.joiner()}${c.summary}\n\n`)
@@ -184,6 +255,7 @@ export class SpokenTextSink implements EventSink {
 
   async done(stopReason: string, _usage: Usage): Promise<void> {
     this.clearHold()
+    this.clearFiller()
     await this.flushAll()
     // A declined request (after any fallback) ends with nothing to say.
     if (stopReason === 'refusal' && !this.spoken.trim()) await this.say(MESSAGES_HR.model_refused)
@@ -192,6 +264,7 @@ export class SpokenTextSink implements EventSink {
 
   async error(_code: ErrorCode, message: string): Promise<void> {
     this.clearHold()
+    this.clearFiller()
     await this.flushAll()
     await this.say(`${this.joiner()}${message}`)
     await this.end('error')

@@ -176,6 +176,14 @@ channel before the turn, dispatch re-checks every name, and the prompt is not a 
 injection can still do is make the model say the wrong thing; the spoken channel summarises
 rather than enumerates, which also limits what is read aloud on a speaker.
 
+A fourth surface since 2026-11-09: database text in the **system prompt**. A pack's `userContext`
+block (the demo catalogue, `docs/CORE.md` → Prompts) is read as the user and sent in the uncached
+user block, where the model weighs it more than a tool result. The rule for it: only fields that
+trusted roles write (the demo catalogue is written by the service role alone), flattened to one
+line and clipped, bounded in rows and characters, never third-party text such as an email
+subject or a sender's name. A pack that breaks this puts another user's or an outsider's text
+where it reads as ours.
+
 **The voice handoff.** The browser must not learn the worker's credentials and the vendor must
 not learn ours. The API mints a LiveKit room token for the browser (15 min, one room) and hands
 the worker an opaque 32-byte token through job metadata; the JWT sits in `voice_calls` under the

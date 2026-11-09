@@ -20,7 +20,8 @@ describe('warm-up', () => {
         answer('Da.'),
       )
       const call = await openCall()
-      const result = await warm(call.deps, await call.identity.ctx())
+      const auth = await call.identity.ctx()
+      const result = await warm(call.deps, auth, await call.session.userContextFor(auth))
       expect(result).toMatchObject({ cache_write: 7474, cache_read: 0 })
       expect(result.ms).toBeGreaterThanOrEqual(0)
       await (

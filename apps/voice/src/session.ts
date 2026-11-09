@@ -1,11 +1,13 @@
 // One call's turns: the per-call turn cap, the identity read (cached up to a minute), the
-// `last_seen_at` bump, the engine turn and its timing line. The LiveKit adapter
+// packs' per-user context (read once per call), the `last_seen_at` bump, the engine turn and
+// its timing line. The LiveKit adapter
 // (`assistant-llm.ts`) hands every user turn here; the bench runs turns through it too.
 import { randomUUID } from 'node:crypto'
 
 import {
   type AuthContext,
   type ErrorCode,
+  errorReason,
   log,
   type ConfirmEvent,
   MemoryConfirmationStore,
@@ -39,6 +41,11 @@ export const MAX_TURNS_PER_CALL = 50
  * the turns behind it in the chain wait no longer than this. */
 export const IDENTITY_TIMEOUT_MS = 5_000
 
+/** How long the one-per-call read of the packs' per-user context may take (the catalogue read
+ * is ~0.1 s) before the call goes without it: the hint saves a model round, it must never cost
+ * one. */
+export const USER_CONTEXT_TIMEOUT_MS = 2_000
+
 export interface TurnIO {
   /** What the caller just said. */
   userText: string
@@ -51,7 +58,10 @@ export interface CallSessionOptions {
   maxTurns?: number
   /** The deadline on the identity read (`IDENTITY_TIMEOUT_MS`). */
   identityTimeoutMs?: number
+  /** The deadline on the per-user context read (`USER_CONTEXT_TIMEOUT_MS`). */
+  userContextTimeoutMs?: number
   pickFiller?: () => string
+  pickEarlyFiller?: () => string
   /** Called once, after the goodbye was handed to the stream, when the call's row is gone (the
    * 15-minute cap, or the API's end): the owner hangs up. */
   onEnded?: (reason: 'call_ended') => void
@@ -75,6 +85,9 @@ export class CallSession {
   private pendingConfirmation: ConfirmEvent | null = null
   private readonly maxTurns: number
   private readonly identityTimeoutMs: number
+  private readonly userContextTimeoutMs: number
+  /** The packs' per-user blocks, read once for the call (`userContextFor`). */
+  private userContext: Promise<readonly string[]> | null = null
   /** Set once the goodbye was spoken: later turns (the caller spoke before the hang-up landed)
    * say nothing. */
   private ended = false
@@ -86,6 +99,47 @@ export class CallSession {
   ) {
     this.maxTurns = options.maxTurns ?? MAX_TURNS_PER_CALL
     this.identityTimeoutMs = options.identityTimeoutMs ?? IDENTITY_TIMEOUT_MS
+    this.userContextTimeoutMs = options.userContextTimeoutMs ?? USER_CONTEXT_TIMEOUT_MS
+  }
+
+  /**
+   * The packs' per-user context blocks for this caller (`ToolRegistry.userContext`: the
+   * catalogue, …), read as the caller once per call and kept for its turns: the worker starts
+   * the read while the greeting plays and the first turn finds it done. A deadline, a failure
+   * or an abort costs the blocks, never the turn (logged, no content).
+   */
+  userContextFor(ctx: AuthContext): Promise<readonly string[]> {
+    this.userContext ??= this.readUserContext(ctx)
+    return this.userContext
+  }
+
+  private async readUserContext(ctx: AuthContext): Promise<readonly string[]> {
+    const t0 = performance.now()
+    const ids = { user_id: this.identity.userId, session_id: this.identity.sessionId }
+    const controller = new AbortController()
+    try {
+      const read = await withDeadline(
+        this.deps.registry.userContext(ctx, this.deps.channel, controller.signal),
+        this.userContextTimeoutMs,
+      )
+      const ms = Math.round(performance.now() - t0)
+      if (read.timedOut) {
+        // The hung read is told to stop; the registry logs its abort as the pack's failure.
+        controller.abort()
+        log('warn', LOG_TAG, 'user context timeout', { ...ids, ms, timeout_ms: this.userContextTimeoutMs })
+        return []
+      }
+      log('info', LOG_TAG, 'user context', {
+        ...ids,
+        ms,
+        blocks: read.value.length,
+        chars: read.value.reduce((n, b) => n + b.length, 0),
+      })
+      return read.value
+    } catch (err) {
+      log('warn', LOG_TAG, 'user context failed', { ...ids, reason: errorReason(err) })
+      return []
+    }
   }
 
   /** A user turn: what is spoken goes to `say`; `end` is called once unless a barge-in cancels
@@ -141,6 +195,7 @@ export class CallSession {
     }
     const authMs = Math.round(performance.now() - t0)
     this.identity.touch()
+    const userContext = await this.userContextFor(ctx)
     // A pending write: "da" carries its id into dispatch, "ne" settles it, anything else is a
     // plain turn with the write still waiting (Part 12b). Decided here, never by the model.
     const confirmation = await this.answerPending(io.userText, ids)
@@ -160,7 +215,9 @@ export class CallSession {
         this.pendingConfirmation = c
       },
       persistAfter: this.saves,
+      userContext,
       ...(this.options.pickFiller ? { pickFiller: this.options.pickFiller } : {}),
+      ...(this.options.pickEarlyFiller ? { pickEarlyFiller: this.options.pickEarlyFiller } : {}),
     })
     this.saves = result.persisted
     this.rows.push(...result.rows)
@@ -172,6 +229,7 @@ export class CallSession {
       turn: this.turns,
       auth_ms: authMs,
       first_text_ms: result.firstTextMs,
+      first_answer_ms: result.firstAnswerMs,
       total_ms: result.totalMs,
       marks: result.marks.map((m) => `${m.name}@${m.atMs}`).join(' '),
       spoken_len: result.spoken.length,

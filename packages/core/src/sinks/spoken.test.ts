@@ -1,15 +1,19 @@
 // S: the spoken-text sink. Landmark's sink.test.ts cases (S01–S07) plus the plan's additions
-// (S08–S10) and the end-of-stream contract (S11–S12). Assertions are on what `say` received.
+// (S08–S10), the end-of-stream contract (S11–S12), the hold timer (S13–S14), the write preview
+// (S15–S16) and the early filler (S17). Assertions are on what `say` received.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MESSAGES_HR } from '../errors.js'
 import { logs, reset } from '../test/harness.js'
 import { speakable } from './speakable.js'
-import { HOLD_MS, SpokenTextSink, type SpokenEnd } from './spoken.js'
+import { FILLER_AFTER_MS, HOLD_MS, SpokenTextSink, type SpokenEnd, type SpokenSinkOptions } from './spoken.js'
 
 const USAGE = { input_tokens: 0, output_tokens: 0 }
 
-function harness() {
+/** Both fillers pinned: the lookup one as every scenario knows it, the early one distinct. */
+const EARLY = 'Trenutak.'
+
+function harness(options: SpokenSinkOptions = {}) {
   const said: string[] = []
   const ends: SpokenEnd[] = []
   const sink = new SpokenTextSink(
@@ -19,7 +23,7 @@ function harness() {
     async (reason) => {
       ends.push(reason)
     },
-    () => 'Samo trenutak.',
+    { pickFiller: () => 'Samo trenutak.', pickEarlyFiller: () => EARLY, ...options },
   )
   return { sink, said, ends, text: () => said.join('') }
 }
@@ -237,7 +241,7 @@ describe('SpokenTextSink hold timer (VOICE-8)', () => {
         throw new Error('tts gone')
       },
       async () => {},
-      () => 'Samo trenutak.',
+      { pickFiller: () => 'Samo trenutak.' },
     )
     await sink.textDelta('Imamo dva stola.')
     await vi.advanceTimersByTimeAsync(HOLD_MS)
@@ -255,9 +259,7 @@ describe('SpokenTextSink hold timer (VOICE-8)', () => {
         said.push(t)
       },
       async () => {},
-      () => 'Samo trenutak.',
-      HOLD_MS,
-      (c) => confirmed.push(c.id),
+      { pickFiller: () => 'Samo trenutak.', holdMs: HOLD_MS, onConfirm: (c) => confirmed.push(c.id) },
     )
     const summary =
       'Odgovorit ću na poruku „Sastanak u petak“. Primatelj je Marko Horvat, a tekst glasi: „Stižem u deset.“'
@@ -286,9 +288,7 @@ describe('SpokenTextSink hold timer (VOICE-8)', () => {
         said.push(t)
       },
       async () => {},
-      () => 'Samo trenutak.',
-      HOLD_MS,
-      (c) => confirmed.push(c.id),
+      { pickFiller: () => 'Samo trenutak.', holdMs: HOLD_MS, onConfirm: (c) => confirmed.push(c.id) },
     )
     const event = (id: string, summary: string) => ({
       id,
@@ -309,11 +309,118 @@ describe('SpokenTextSink hold timer (VOICE-8)', () => {
         throw new Error('tts down')
       },
       async () => {},
-      () => 'Samo trenutak.',
-      HOLD_MS,
-      (c) => kept.push(c.id),
+      { pickFiller: () => 'Samo trenutak.', holdMs: HOLD_MS, onConfirm: (c) => kept.push(c.id) },
     )
     await expect(failing.confirm(event('c3', 'Treće.'))).rejects.toThrow('tts down')
     expect(kept).toEqual(['c3'])
+  })
+})
+
+describe('SpokenTextSink early filler', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('S17: nothing from the model for FILLER_AFTER_MS speaks the neutral filler with a paragraph break; the answer follows it; first_answer excludes it', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS - 1)
+    expect(h.said).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.text()).toBe(`${EARLY}\n\n`)
+    expect(h.sink.firstOutputAt).not.toBeNull()
+    expect(h.sink.firstAnswerAt).toBeNull()
+    await h.sink.textDelta('Uredska stolica košta sto osamdeset devet eura.')
+    await h.sink.textDelta(' Želite li detalje?')
+    await h.sink.done('end_turn', USAGE)
+    expect(h.text()).toBe(`${EARLY}\n\nUredska stolica košta sto osamdeset devet eura. Želite li detalje?`)
+    expect(h.sink.firstAnswerAt).not.toBeNull()
+    expect(h.sink.firstAnswerAt!).toBeGreaterThanOrEqual(h.sink.firstOutputAt!)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('S17b: a tool call after the early filler speaks no second filler; a tool call before it speaks the lookup filler and disarms it', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    await h.sink.toolStarting()
+    await h.sink.textDelta('Nema ga.')
+    await h.sink.done('end_turn', USAGE)
+    expect(h.text()).toBe(`${EARLY}\n\nNema ga.`)
+
+    const early = harness()
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS / 2)
+    await early.sink.toolStarting()
+    expect(early.text()).toBe('Samo trenutak.\n\n')
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(early.text()).toBe('Samo trenutak.\n\n')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('S17c: the first token disarms it, so a direct answer that arrives in time hears no filler; so do a textBlock and a confirm', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS - 100)
+    await h.sink.textDelta('Bok! Kako')
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    await h.sink.textDelta(' mogu pomoći?')
+    await h.sink.done('end_turn', USAGE)
+    expect(h.text()).toBe('Bok! Kako mogu pomoći?')
+    expect(h.sink.firstAnswerAt).toBe(h.sink.firstOutputAt)
+
+    const block = harness()
+    await block.sink.textBlock(MESSAGES_HR.tool_limit_reached, 'row-9')
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(block.text()).toBe(MESSAGES_HR.tool_limit_reached)
+
+    const confirmed = harness({ onConfirm: () => {} })
+    await confirmed.sink.confirm({
+      id: 'c1',
+      tool: 'w',
+      toolUseId: 't1',
+      summary: 'Prvo.',
+      expiresAt: '2099-01-01T00:00:00Z',
+    })
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(confirmed.text()).toBe('Prvo.\n\n')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('S17d: done, error and abort disarm it; fillerAfterMs 0 never arms it', async () => {
+    const d = harness()
+    await d.sink.done('end_turn', USAGE)
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(d.text()).toBe('')
+    expect(d.ends).toEqual(['done'])
+
+    const e = harness()
+    await e.sink.error('model_timeout', MESSAGES_HR.model_timeout)
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(e.text()).toBe(MESSAGES_HR.model_timeout)
+
+    const a = harness()
+    expect(vi.getTimerCount()).toBe(1)
+    a.sink.abort()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    expect(a.said).toEqual([])
+
+    const off = harness({ fillerAfterMs: 0 })
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS * 2)
+    await off.sink.toolStarting()
+    expect(off.text()).toBe('Samo trenutak.\n\n')
+  })
+
+  it('S17e: a say that fails when the early filler fires is caught and logged, without content', async () => {
+    reset()
+    new SpokenTextSink(
+      async () => {
+        throw new Error('tts gone')
+      },
+      async () => {},
+      { pickEarlyFiller: () => EARLY },
+    )
+    await vi.advanceTimersByTimeAsync(FILLER_AFTER_MS)
+    const line = logs.find((l) => l.line.includes('"early filler failed"'))
+    expect(line?.level).toBe('warn')
+    expect(line?.line).toContain('"reason":"Error: tts gone"')
+    expect(line?.line).not.toContain(EARLY)
   })
 })

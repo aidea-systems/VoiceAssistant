@@ -3,7 +3,7 @@
 // `REL-3`), so the pack reads them through the user's client as it is: no cast, no hand-written
 // shape. A pack depends on `@va/core` only; the queries are typed by the client the engine hands
 // every handler. This is the contract for a real pack.
-import type { AuthContext } from '@va/core'
+import type { AuthContext, Channel } from '@va/core'
 
 /** The user's RLS client: still the user's JWT, RLS applies. */
 export function demoClient(ctx: AuthContext): AuthContext['userClient'] {
@@ -24,6 +24,12 @@ export const NO_STAR = /^[^*]*$/
 
 /** Voice reads at most this many list items aloud. */
 export const VOICE_MAX_ITEMS = 5
+
+/** The channels whose output is read aloud: the in-app call and the phone (the phone took
+ * voice's allowlist in Part 11; a `=== 'voice'` check gave it ids and full lists). */
+export function isSpoken(channel: Channel): boolean {
+  return channel === 'voice' || channel === 'phone'
+}
 
 /** Clips free text for speech. */
 export function clip(text: string | null, max = 160): string | null {
