@@ -12,6 +12,7 @@ import {
   type ConfirmEvent,
   errorReason,
   type InMemoryMessage,
+  isCourtesy,
   log,
   type LoopHooks,
   type LoopMark,
@@ -140,7 +141,9 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
     ...(input.pickFiller ? { pickFiller: input.pickFiller } : {}),
     ...(input.pickEarlyFiller ? { pickEarlyFiller: input.pickEarlyFiller } : {}),
     holdMs: settings.holdMs,
-    fillerAfterMs: settings.fillerAfterMs,
+    // A greeting, thanks or goodbye waits for its answer in silence (VOICE-20): "Samo
+    // trenutak." before "Dobar dan" sounds like a lookup.
+    fillerAfterMs: isCourtesy(userText) ? 0 : settings.fillerAfterMs,
     ...(input.onConfirm ? { onConfirm: input.onConfirm } : {}),
   })
   const controller = new AbortController()

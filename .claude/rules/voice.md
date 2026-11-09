@@ -12,6 +12,8 @@ paths:
 - **The filler** is spoken once per user turn by the sink, never by the model: the neutral one
   ("Samo trenutak.") after `FILLER_AFTER_MS` of model silence, or the lookup one ("Samo trenutak,
   provjeravam.") when the first tool call starts first; the prompt forbids announcing lookups.
+  A short courtesy turn (`isCourtesy`: a greeting, thanks or goodbye in at most four words) gets
+  no early filler (VOICE-20).
 - **Everything the model says is rewritten by `speakable()`** before TTS. Keep that function
   deterministic, pure and covered by a table test.
 - **Never log transcripts or audio.** Log timings, lengths, ids, call tokens hashed.

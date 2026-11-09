@@ -165,23 +165,23 @@ Required: `AGENT_NAME`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, 
 `AI_VOICE_EFFORT`, `AI_PHONE_MODEL`, `AI_PHONE_EFFORT` (`docs/CORE.md` → Channels), `VOICE_LOGS_DIR`. The tuning values are
 Landmark's measured defaults; change one only with a measurement (`/bench-voice`).
 
-| Variable                 | Default                | Meaning, and what Landmark measured                                                                                                              |
-| ------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `VOICE_ID`               | `pTD8166KADi6ZFJ5FEXi` | ElevenLabs voice (Karlo, chosen 2026-10-26)                                                                                                      |
-| `ENDPOINT_LATENCY_LEVEL` | 3                      | Soniox v5 endpoint latency adjustment, 0–3. At 3, latency dropped from about 1.55 to 1.27 s                                                      |
-| `ENDPOINT_DELAY_MS`      | 500                    | Soniox maximum end-of-turn delay (500–3000). Lowering it from 1000 made no difference                                                            |
-| `TURN_MIN_DELAY_MS`      | 100                    | LiveKit's wait after Soniox's end-of-turn token. LiveKit's own 500 ms is added on top of Soniox's, so it is pure waiting                         |
-| `INTERRUPT_ON`           | `vad`                  | `vad`: Silero stops the agent (20/20 within 0.5 s, median 0.25 s). `stt`: no Silero, Soniox's first interim words (20/20, median 0.30 s). `both` |
-| `INTERRUPT_MIN_MS`       | 50                     | Speech needed before the agent stops talking (LiveKit's own is 500)                                                                              |
-| `OUTPUT_QUEUE_MS`        | 50                     | Agent audio queued ahead of playout, cleared on an interruption (LiveKit's own is 200)                                                           |
-| `VAD_THRESHOLD`          | 0.3                    | Silero activation threshold (its own is 0.5). Also fires on breath: 2 of 40 tries stopped the agent 0.22 s before the first word                 |
-| `VAD_MIN_SPEECH_MS`      | 30                     | Silero minimum speech (its own is 50)                                                                                                            |
-| `IDENTITY_CACHE_MS`      | 60000                  | Per-call identity re-read interval; the schema caps it at a minute (invariant 7)                                                                 |
-| `FILLER_AFTER_MS`        | 700                    | Model silence before the early filler ("Samo trenutak."); 0 keeps the filler to the first tool call. Measured 2026-11-09 (below)                 |
-| `PHONE_PIN_ROLES`        | `admin,member`         | Roles that must enter a keypad PIN on the phone channel: every role during the pilot (decision 0013)                                             |
-| `PHONE_PIN_TIMEOUT_MS`   | 10000                  | The keypad wait before the one re-prompt, then the refusal (Part 11b)                                                                            |
-| `PHONE_PIN_MAX_FAILURES` | 3                      | Wrong PINs in a row that lock the number                                                                                                         |
-| `PHONE_PIN_LOCK_MS`      | 900000                 | How long a locked number is refused (15 minutes)                                                                                                 |
+| Variable                 | Default                | Meaning, and what Landmark measured                                                                                                                                                           |
+| ------------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VOICE_ID`               | `pTD8166KADi6ZFJ5FEXi` | ElevenLabs voice (Karlo, chosen 2026-10-26)                                                                                                                                                   |
+| `ENDPOINT_LATENCY_LEVEL` | 3                      | Soniox v5 endpoint latency adjustment, 0–3. At 3, latency dropped from about 1.55 to 1.27 s                                                                                                   |
+| `ENDPOINT_DELAY_MS`      | 500                    | Soniox maximum end-of-turn delay (500–3000). Lowering it from 1000 made no difference                                                                                                         |
+| `TURN_MIN_DELAY_MS`      | 100                    | LiveKit's wait after Soniox's end-of-turn token. LiveKit's own 500 ms is added on top of Soniox's, so it is pure waiting                                                                      |
+| `INTERRUPT_ON`           | `vad`                  | `vad`: Silero stops the agent (20/20 within 0.5 s, median 0.25 s). `stt`: no Silero, Soniox's first interim words (20/20, median 0.30 s). `both`                                              |
+| `INTERRUPT_MIN_MS`       | 50                     | Speech needed before the agent stops talking (LiveKit's own is 500)                                                                                                                           |
+| `OUTPUT_QUEUE_MS`        | 50                     | Agent audio queued ahead of playout, cleared on an interruption (LiveKit's own is 200)                                                                                                        |
+| `VAD_THRESHOLD`          | 0.3                    | Silero activation threshold (its own is 0.5). Also fires on breath: 2 of 40 tries stopped the agent 0.22 s before the first word                                                              |
+| `VAD_MIN_SPEECH_MS`      | 30                     | Silero minimum speech (its own is 50)                                                                                                                                                         |
+| `IDENTITY_CACHE_MS`      | 60000                  | Per-call identity re-read interval; the schema caps it at a minute (invariant 7)                                                                                                              |
+| `FILLER_AFTER_MS`        | 700                    | Model silence before the early filler ("Samo trenutak."); 0 keeps the filler to the first tool call. Not armed on a short courtesy turn (`isCourtesy`, VOICE-20). Measured 2026-11-09 (below) |
+| `PHONE_PIN_ROLES`        | `admin,member`         | Roles that must enter a keypad PIN on the phone channel: every role during the pilot (decision 0013)                                                                                          |
+| `PHONE_PIN_TIMEOUT_MS`   | 10000                  | The keypad wait before the one re-prompt, then the refusal (Part 11b)                                                                                                                         |
+| `PHONE_PIN_MAX_FAILURES` | 3                      | Wrong PINs in a row that lock the number                                                                                                                                                      |
+| `PHONE_PIN_LOCK_MS`      | 900000                 | How long a locked number is refused (15 minutes)                                                                                                                                              |
 
 Fixed in code, not settings: `turnDetection: 'stt'` (LiveKit's turn detector has no Croatian),
 `interruption.mode: 'vad'` (never LiveKit's hosted "adaptive" model), the Soniox EU host and
@@ -232,6 +232,15 @@ What the bench does not judge is the answers themselves: with the block the mode
 the prompt, so a run with `SHOW_ANSWERS=1` is read before this is called done on the live call.
 The paragraph-break count now subtracts the filler's own break whenever a filler was spoken, not
 only on tool answers.
+
+The first hosted call on the deployed build (`a11b8f6`, four turns, all one model round) landed
+where the bench said: first text 0.70 s on every turn (the filler), first answer 1.34–2.20 s,
+whole answer 1.41–3.10 s, the model's first event 1.22–1.97 s; the catalogue block was read in
+138 ms, once. What grated was "Samo trenutak." as the reply to the caller's "Dobar dan" (the
+model never answers under 1.2 s, so no threshold saves a greeting): since `VOICE-20` a turn of at
+most four words containing a greeting, thanks or goodbye (`isCourtesy` in `@va/core`) gets no
+early filler and waits for its answer in silence. The bench's courtesy questions therefore
+report first text equal to first answer; the model's own numbers do not move.
 
 **Part 13b, the mail pack on voice.** Both runs on the local stack with the seed member, three
 repeats each, one shell (`~/.config/va/voice.local.env` sourced after `voice.env`). The bench
