@@ -55,7 +55,7 @@ describe('a spoken turn', () => {
       expect(out.text).not.toContain('\n\n')
 
       // The tool's own read, the one with the name filter (the call's one catalogue-context
-      // read, W22, selects the same three columns without it).
+      // read, W44, selects the same three columns without it).
       const read = db.requestsTo('demo_items', 'GET').filter((r) => r.params.has('name'))
       expect(read).toHaveLength(1)
       expect(clientOf(read[0]!)).toBe('user')
@@ -273,7 +273,7 @@ describe('a spoken turn', () => {
   })
 
   scenario(
-    'W22 the catalogue is in the uncached user block, read once per call as the caller, so a price question needs no tool round',
+    'W44 the catalogue is in the uncached user block, read once per call as the caller, so a price question needs no tool round',
     async () => {
       anthropic.script(answer('Stolna lampa košta četrdeset devet eura i devedeset centi.'), answer('Da.'))
       const call = await openCall()

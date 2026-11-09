@@ -239,7 +239,7 @@ describe('ToolRegistry', () => {
         }),
       ],
       userContext: async () => {
-        throw new Error('db down: secret row text')
+        throw new Error('PGRST301')
       },
     }
     const registry = new ToolRegistry([failing, first, adminOnly, silent, empty], {
@@ -264,7 +264,7 @@ describe('ToolRegistry', () => {
     expect(warned).toHaveLength(1)
     expect(warned[0]).toContain('"user context failed"')
     expect(warned[0]).toContain('"pack":"failing"')
-    expect(warned[0]).toContain('db down')
+    expect(warned[0]).toContain('"reason":"Error: PGRST301"')
     expect(warned[0]).not.toContain('Prvi')
 
     // No tool of any pack on the phone: nobody is asked.

@@ -34,7 +34,7 @@ export interface VoiceDeps {
 
 /** `confirmations` is the call's own store (`CallSession` keeps one); the warm-up needs none.
  * `userContext` is the packs' per-user blocks the call read once (`CallSession.userContextFor`),
- * appended to the uncached user block; the warm-up sends none, the cached prefix is the same. */
+ * appended to the uncached user block; the warm-up sends the same blocks (`warm.ts`). */
 export function voiceLoopConfig(
   deps: VoiceDeps,
   ctx: AuthContext,

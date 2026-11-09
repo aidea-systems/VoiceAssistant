@@ -328,10 +328,12 @@ block as the user (`ctx.userClient`, RLS) or returns `null`; `registry.userConte
 signal)` asks every pack that has the hook and at least one tool advertised to that role on that
 channel, in pack order, and logs and skips a pack that throws (`user context failed`, the pack's
 name, no content; `T10`). The voice worker reads it once per call while the greeting plays, with
-a 2 s deadline, sends it in the warm-up and in every turn (`W22`); chat does not use it yet (Opus
+a 2 s deadline, sends it in the warm-up and in every turn (`W44`); chat does not use it yet (Opus
 with ten iterations has the room; the hook is there when it wants it). The demo pack's block is
 the catalogue itself (up to 50 items, name, category and price; an empty catalogue is said
-outright so the model does not probe it, `CORE-14`), `D15`.
+outright so the model does not probe it, `CORE-14`), `D17`. A block is built only from fields
+that trusted roles write, never from third-party text (an email subject, a sender's name): it
+sits in the system prompt, where the model gives it more weight than a tool result.
 
 `DOMAIN_RULES_HR` is one short placeholder rule in the skeleton (rely on tool output; retry a
 search with a shorter stem, then ask). Packs contribute their own rules through the
@@ -408,8 +410,8 @@ when the registry is built (`T02`, `W20`).
 
 | Tool            | Pack | Roles         | readOnly      | Channels           | What                                                                                                                                                                                    |
 | --------------- | ---- | ------------- | ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `search_items`  | demo | admin, member | yes           | chat, voice, phone | substring search of `demo_items` by name, ≤ 100 (default 20), sorted, with the true total; voice: ≤ 5 items, no ids                                                                     |
-| `get_item`      | demo | admin, member | yes           | chat, voice, phone | one item by id; `{ error: 'item not found' }` when missing; voice: no id, clipped text                                                                                                  |
+| `search_items`  | demo | admin, member | yes           | chat, voice, phone | substring search of `demo_items` by name, ≤ 100 (default 20), sorted, with the true total; voice and phone: ≤ 5 items, no ids                                                           |
+| `get_item`      | demo | admin, member | yes           | chat, voice, phone | one item by id; `{ error: 'item not found' }` when missing; voice and phone: no id, clipped text                                                                                        |
 | `create_note`   | demo | admin, member | no, confirmed | chat               | attaches a user-written note to an item (`demo_notes`) after the user confirmed the preview (Part 12)                                                                                   |
 | `reply_mail`    | mail | admin, member | no, confirmed | chat, voice, phone | replies to the sender of one message (the From address, never a Reply-To) with the user's text as a plain-text body; ≤ 2000 characters (500 on a call); no other recipient can be named |
 | `flag_mail`     | mail | admin, member | no, confirmed | chat, voice, phone | flags one message for follow-up; nothing else                                                                                                                                           |

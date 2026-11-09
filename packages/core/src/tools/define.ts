@@ -53,7 +53,12 @@ export interface ToolPack {
    * is answered in one model round instead of a search round plus an answer round. Croatian,
    * from developer to model, `## Heading` first; `null` when there is nothing to add. Called
    * only when at least one of the pack's tools is advertised on the channel. Best effort: a throw
-   * or a deadline costs the hint, never the turn (`ToolRegistry.userContext`).
+   * or a deadline costs the hint, never the turn (`ToolRegistry.userContext`); a thrown error's
+   * message carries codes only, because it is logged. The block sits in the system prompt, where
+   * the model gives it more weight than a tool result: build it only from fields that trusted
+   * roles write, flattened and clipped, never from third-party text (an email subject, a sender's
+   * name). A spoken channel reads it once per call and keeps it, the role of that first read
+   * included: the one deliberate exception to re-reading everything but identity.
    */
   userContext?(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<string | null>
 }

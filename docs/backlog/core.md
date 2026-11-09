@@ -1,10 +1,22 @@
 # Backlog — core
 
-Ids: CORE-15 (next free)
+Ids: CORE-16 (next free)
 
 The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
 
 ## Open
+
+### CORE-15 · Low · On the spoken channels get_item cannot be reached and no item description can be heard
+
+- **Check:** Code reading (the catalogue-context security review, 2026-11-09)
+- **Where:** `packages/tools-demo/src/tools/search-items.ts` (no ids on voice and phone, by
+  design), `get-item.ts` (needs an id from search_items), `apps/voice/src/tools.ts` (both on the
+  allowlist)
+- **What happens:** a caller who asks for an item's description gets a model that either makes
+  up an id (`item not found`) or says it cannot; the catalogue block's rule therefore sends the
+  model to the tool only for items that are not listed
+- **Fix direction:** voice `search_items` returns a clipped description with each item, or a
+  spoken `get_item` takes a name; then the allowlist entry for `get_item` earns its place or goes
 
 ### CORE-14 · Medium · The model probes an empty catalogue with single-letter searches
 

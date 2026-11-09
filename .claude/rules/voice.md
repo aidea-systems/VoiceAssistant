@@ -21,4 +21,5 @@ paths:
   local tuning runs and is never reachable in a deployed worker.
 - **Settings are env vars** documented in `docs/VOICE.md`; defaults are Landmark's measured values.
   Change a default only with a measurement.
-- Identity may be cached for at most 60 s per call; everything else is re-read.
+- Identity may be cached for at most 60 s per call; everything else is re-read, with one
+  deliberate exception: the packs' per-user context block is read once per call and kept.
