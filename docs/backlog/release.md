@@ -82,7 +82,9 @@ three sets of checks) and says how to paste the results back.
       diff of `manifest.json` is empty or reviewed (the snapshot of 2026-11-09 was assembled from
       Landmark's branch, not pulled); (d) the pilot Director's email is mapped in that project's
       `public.users` with an `auth_user_id`, and the same address is the confirmed email of their
-      assistant account (`REL-14` first); (e) one question per tool from chat and from a call
+      assistant account (`REL-14` first: with sign-up open the pack's confirmed-address check
+      protects nothing, `OPS-9`; check that a `POST` to `$SUPABASE_URL/auth/v1/signup` answers
+      `422 signup_disabled` before the two variables go in); (e) one question per tool from chat and from a call
       against the dev project, the twelve of `docs/LANDMARK.md`, and one as a user Landmark does
       not know (no Landmark tool advertised); (f) `/bench-voice` after, the row in `docs/VOICE.md`
       (the prompt grew by Landmark's rules). Check: the `[landmark]` request lines carry status

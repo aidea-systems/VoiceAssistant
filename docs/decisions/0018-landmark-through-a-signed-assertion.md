@@ -23,10 +23,12 @@ landmark-assistant-api`, `sub` the caller's email, 60 s of life, a fresh `jti`, 
   pattern Landmark already uses for machine callers, with the identity inside a signed, expiring,
   single-use token instead of a header. Our user's JWT never leaves our side; no Landmark
   database credential ever enters ours.
-- **Who may be signed for:** only a user whose auth account GoTrue confirmed at that address and
-  that is not banned (`packages/tools-landmark/src/subject.ts`, the Outlook callback's check),
-  read through the service client by the user's own auth id and cached a minute. With public
-  sign-up off (`REL-14`) nobody can register a colleague's address and reach their data.
+- **Who may be signed for:** only a user whose auth account GoTrue confirmed at that address,
+  that is not banned, and whose auth address is the one the profile was created for
+  (`packages/tools-landmark/src/subject.ts`, the Outlook callback's check), decided from the
+  identity `authenticateToken` re-reads for every request (`AuthContext.auth`), so no tool makes
+  an identity read of its own. With public sign-up off (`REL-14`, `OPS-9`) nobody can register a
+  colleague's address and reach their data.
 - **The pack is built from a committed snapshot of `/manifest`** (`manifest.json`: the twelve
   tools' names, descriptions, JSON Schema inputs, Landmark roles, the voice flag, and
   Landmark's Croatian data-model rules, versioned by the SHA-256 of that JSON). zod is built from
@@ -56,6 +58,12 @@ landmark-assistant-api`, `sub` the caller's email, 60 s of life, a fresh `jti`, 
 - The secret lives in three stores (our API, our worker, Landmark's function secrets) and is
   rotated by changing all three. A rotation is a short outage of the Landmark tools, which the
   model reports as `landmark_unavailable`.
+- The pack trusts Landmark's clamps and gate but does not depend on them: it bounds the body it
+  reads, clips refusal text, clamps again on a spoken channel, holds the snapshot to a reviewed
+  list of tool names and a known schema shape, and caps every string the model sends (the
+  security review of 2026-11-09). Landmark's `jti` memory is per isolate, so a replay within 60 s
+  can succeed on another isolate; accepted, the token names a single user and the handlers only
+  read.
 - The production Landmark project is never a target in development: the dev project
   (`nxvbglegqcgxlxvyfuht`) first, production only on an explicit ask, by the operator.
 - Decided 2026-11-04 in the plan (`docs/plan/14-landmark-pack.md`), built 2026-11-09. The plan

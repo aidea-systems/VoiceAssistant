@@ -303,6 +303,11 @@ from the catalogue. It parses no `Request`: the API extracts the bearer token, t
 takes it from `voice_calls`. Identity is re-read on every request; the worker may cache it for
 60 s per call. Log lines carry `[core:auth]`, ids and codes, never the token.
 
+`AuthContext.auth` carries the auth account as GoTrue returned it for the request: its address,
+`emailConfirmedAt` and `bannedUntil`. A pack that signs for the user towards another system (the
+Landmark assertion) decides from these and needs no identity read of its own (`subjectOf` in
+`@va/tools-landmark`, `L09`).
+
 ## Errors
 
 `ErrorCode` is the closed set every channel uses; `MESSAGES_HR` has the user-facing Croatian

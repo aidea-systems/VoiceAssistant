@@ -1,10 +1,24 @@
 # Backlog — ops
 
-Ids: OPS-9 (next free)
+Ids: OPS-10 (next free)
 
 CI, hooks, env, logging, deploy, dependencies.
 
 ## Open
+
+### OPS-9 · Medium · Nothing in code refuses the Landmark pack while public sign-up is open
+
+- **Check:** Confirmed (the security review of Part 14, finding 4): `supabase/config.toml` has
+  `enable_signup = true` and `enable_confirmations = false` for the local stack; with
+  confirmations off GoTrue confirms an address at sign-up, so the pack's "confirmed" check passes
+  for anyone who registers a colleague's address
+- **Where:** `apps/api/src/index.ts`, `apps/voice/src/agent.ts`, where `landmarkConfig(env)`
+  registers the pack; `REL-14` (sign-up off) is the precondition, a runbook step
+- **What happens:** a project where `REL-14` was missed lets anyone who can register read a
+  Director's Landmark data as that Director
+- **Fix direction:** at startup, where the pack is registered, read GoTrue's public
+  `GET /auth/v1/settings` and refuse to register the Landmark pack unless `disable_signup` is
+  true (log an error naming `REL-14`); the fake GoTrue gets the route; a test per app
 
 ### OPS-1 · Low · The API container runs TypeScript through tsx instead of a built `dist`
 

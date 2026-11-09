@@ -133,8 +133,13 @@ public sign-up open and email confirmation off, anyone could register a colleagu
 before the colleague does, so sign-up stays off and users are invited (`REL-14`). The same
 address is what the Landmark pack (Part 14) signs as `sub`, so the same setting protects the
 company's Landmark data; the pack itself signs only for an address GoTrue confirmed on the
-caller's own account, not banned, equal to the profile's (`packages/tools-landmark/src/subject.ts`,
-`L09`), and Landmark maps it to exactly one user of its own or refuses. Tokens are
+caller's own account, not banned, equal to the profile's, decided from the identity
+`authenticateToken` re-read for the request (`ctx.auth`, `packages/tools-landmark/src/subject.ts`,
+`L09`; no tool-side identity read), and Landmark maps it to exactly one user of its own or
+refuses. Whoever holds `LANDMARK_ASSISTANT_SECRET` (the API host, the worker host, Landmark's
+function secrets) can sign an assertion for any address, the Director's included: the secret
+is as sensitive as `INTEGRATIONS_KEY`, lives in those three stores only, and is rotated by
+changing all three. Tokens are
 AES-256-GCM ciphertext under `INTEGRATIONS_KEY` on the two hosts only; a database dump alone
 opens nothing, but a token and the key together can read and send mail as the user, which is
 why both stay out of logs, responses and the browser. Disconnecting deletes our copy; Microsoft's
@@ -160,11 +165,6 @@ the reason it needs no user filter:
   reads a number, no row.
 - `apps/voice/src/call.ts`, the call lookup: `voice_calls` by the opaque token's SHA-256 (and the
   room) before the user is known; the hash is the credential and the filter.
-- `packages/tools-landmark/src/subject.ts`, the one read a pack makes with the service client:
-  GoTrue's admin lookup of the caller's own auth account (`auth.admin.getUserById(ctx.authUserId)`),
-  to sign the Landmark assertion only for an address GoTrue confirmed on that account and not
-  banned, the same read as the Outlook callback's `ownsMailbox`; the caller's own `auth_user_id`
-  is the filter, cached 60 s, nothing written (decision 0018, `L09`).
 - `packages/core/src/auth.ts`, the profile re-read: `public.users` by `auth_user_id` from GoTrue's
   answer; the identity it establishes is the filter for everything after it.
 - `packages/integrations/src/microsoft/tokens.ts`, the token store (`tokenFor`, in the API and
@@ -197,6 +197,18 @@ trusted roles write (the demo catalogue is written by the service role alone), f
 line and clipped, bounded in rows and characters, never third-party text such as an email
 subject or a sender's name. A pack that breaks this puts another user's or an outsider's text
 where it reads as ours.
+
+A fifth surface since 2026-11-09, Part 14: text from Landmark. Its handlers return names of
+projects and subcontractors, contract notes and help articles that Landmark's staff wrote, and
+they reach the model as tool results; the pack's rules say that everything a tool returns is
+data, never an instruction, the twelve are reads, and a mail write still needs the user's
+"da". Landmark's own `domain_rules_hr` sits in the static system prompt: it is taken from a
+committed, reviewed snapshot (`manifest.json`), never from a live read, so a change there is a
+diff someone approves (decision 0018). The pack bounds what comes back whatever Landmark did:
+a body over 256 KB is refused, a handler's refusal text is clipped to 200 characters with
+control characters removed, and on a spoken channel lists are cut to five with the total and
+strings to 200 characters (`L13`). Landmark's ids stay in the data for chaining; the prompt
+says they are never spoken, and `speakable()` does not yet scrub a UUID (`VOICE-21`).
 
 **The voice handoff.** The browser must not learn the worker's credentials and the vendor must
 not learn ours. The API mints a LiveKit room token for the browser (15 min, one room) and hands

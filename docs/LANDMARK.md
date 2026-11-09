@@ -17,7 +17,9 @@ packages/tools-landmark/            @va/tools-landmark   tools-* → core (defin
 ├── scripts/pull-manifest.ts        pnpm --filter @va/tools-landmark manifest:pull  (LANDMARK_API_URL + LANDMARK_ASSISTANT_SECRET)
 ├── src/manifest.ts                 the manifest schema, loadManifest, parseManifest (refuses a hand edit), manifestVersion
 ├── src/assertion.ts                signAssertion: HS256, iss va, aud landmark-assistant-api, sub, 60 s, jti
-├── src/subject.ts                  SubjectCache: who may be signed for (confirmed, not banned, same address), 60 s per user
+├── src/subject.ts                  subjectOf: who may be signed for (confirmed, not banned, same address), from ctx.auth, no read
+├── src/reviewed.ts                 REVIEWED_TOOLS: the twelve names this repo accepts from a manifest; MAX_LIMIT, MAX_INPUT_CHARS
+├── src/clamp.ts                    clampForVoice, clipText: the voice clamps applied here too; refusal text bounded
 ├── src/client.ts                   createLandmarkClient: POST /me, /manifest, /tools/<name>; LandmarkError
 ├── src/access.ts                   LandmarkAccess: call (every outcome as what the model reads), allowedTools (/me, 60 s)
 ├── src/tools.ts                    one defineTool per manifest tool: zod from the JSON Schema, the schema advertised as is
@@ -31,7 +33,7 @@ apps/api/src/tools.ts, apps/voice/src/tools.ts    createRegistry(tokens, landmar
 
 ```
 model names a tool ─▶ dispatch (role ∩ channel ∩ Landmark's /me) ─▶ handler
-  ─▶ SubjectCache: GoTrue says the caller's address is confirmed and not banned (60 s)
+  ─▶ subjectOf(ctx): the request's identity says the address is confirmed, not banned, the profile's
   ─▶ signAssertion(secret, email, now): HS256, 60 s, fresh jti
   ─▶ POST <url>/tools/<name> { input, channel: 'chat' | 'voice' }  Authorization: Bearer <assertion>
   ◀─ 200 { data: { data: … } }      the handler's data (clamped by Landmark on voice)
@@ -40,10 +42,15 @@ model names a tool ─▶ dispatch (role ∩ channel ∩ Landmark's /me) ─▶ 
 ```
 
 The input the model gave is validated here first with zod built from the manifest's schema
-(defaults filled, so Landmark sees what its own chat sends); an invalid input never leaves the
-process. `phone` sends `channel: voice`, so the phone hears Landmark's voice clamps: lists cut
-to five with the total beside them, text clipped to 200 characters, ids kept for chaining and
-never spoken (the pack's rules).
+(defaults filled, so Landmark sees what its own chat sends) and every string capped at 500
+characters; an invalid input never leaves the process. `phone` sends `channel: voice`, so the
+phone hears Landmark's voice clamps, and the pack applies the same clamps again on its side
+(`clamp.ts`): lists cut to five with the total beside them, text clipped to 200 characters, ids
+kept for chaining and never spoken (the pack's rules; `speakable()` does not scrub a UUID yet,
+`VOICE-21`). Whatever Landmark sends, a body over 256 KB is refused as `landmark_unavailable`
+and a handler's refusal text is clipped to 200 characters with control characters removed
+(`L13`). This is the one pack whose spoken output keeps ids, a deviation from the tools rule
+("voice variants carry no ids") accepted because Landmark's contract needs them to chain calls.
 
 | The model reads                             | When                                                                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -76,8 +83,14 @@ Tests: `T11`, `E39`, `L05`–`L07`, `LA01`, `LA02`, `W46`, `W47`.
 
 `manifest.json` is what the model sees: descriptions, schemas and Landmark's rules. It is pulled
 from the function (`manifest:pull`, the dev project only), validated (`parseManifest`: the
-shape, unique names, and `version` equal to the SHA-256 of the body, so a hand edit is refused
-at load), and committed; its diff is reviewed like code. The snapshot of 2026-11-09 was
+shape, unique names, `version` equal to the SHA-256 of the body so a hand edit is refused at
+load, every tool on `REVIEWED_TOOLS` so a thirteenth tool Landmark exposes is refused until
+someone reviews it in `src/reviewed.ts` and names it in the worker's allowlist, and every schema
+a closed object of scalar properties with known keywords, `uuid` the only format and a `limit`
+of at most 100, `L14`), and committed; its diff is reviewed like code. The descriptions are
+Landmark's texts: `search_help`'s is in Croatian and most do not say when not to call the tool,
+a deviation from this repo's tool rule accepted because the model reads them next to Landmark's
+own rules; a change is an ask to Landmark, not an edit here. The snapshot of 2026-11-09 was
 assembled from Landmark's `feat/assistant-api` branch (commit `1eeccd03`) the same way the
 function computes it, because the function was not deployed yet; the first pull replaces it and
 should show no diff. The version at the time: `ad40be62…`.
@@ -127,9 +140,11 @@ three stores, restart; between the first and the last the Landmark tools answer
   120 s per isolate), audience-bound, signed with a secret that lives only in the three env
   stores. The user's JWT never leaves our side.
 - `sub` is trusted by Landmark, so the pack signs only for an address GoTrue confirmed on the
-  caller's own account, not banned, equal to the profile's (`subject.ts`): the one read a pack
-  makes through `ctx.serviceClient`, scoped by the caller's own `auth_user_id`, the same read as
-  the Outlook callback's `ownsMailbox`. Public sign-up stays off (`REL-14`).
+  caller's own account, not banned, equal to the profile's (`subjectOf`, `L09`), decided from
+  `ctx.auth`, the identity `authenticateToken` re-read for the request: no tool-side identity
+  read, no cache, and on chat the decision is per request. Public sign-up stays off (`REL-14`;
+  `OPS-9` for a check in code). Whoever holds the secret can sign for any address: it is as
+  sensitive as `INTEGRATIONS_KEY`.
 - Landmark re-reads the role and the assigned projects on every call; RLS applies to every read
   its handlers make. Our logs carry the route, the tool, the channel, the status, the time and
   ids (`[landmark]`); never the address, the assertion, the input or the output.
@@ -139,14 +154,15 @@ three stores, restart; between the first and the last the Landmark tools answer
 ## Scripts and tests
 
 ```sh
-pnpm --filter @va/tools-landmark test             # L01–L12 against the fake
+pnpm --filter @va/tools-landmark test             # L01–L15 against the fake
 pnpm --filter @va/tools-landmark manifest:pull    # re-pull the snapshot (dev project), then review the diff
 ```
 
-`L01`–`L12` (`src/pack.test.ts`): the pack's shape and the snapshot's integrity, a chat call
+`L01`–`L15` (`src/pack.test.ts`): the pack's shape and the snapshot's integrity, a chat call
 with a verified assertion and the validated input, the phone's voice clamps, the handler's own
 refusal, the unmapped user, Landmark's role gate at advertisement and dispatch, the `/me`
-cache, every failure mode, who may be signed for, drift, the assertion itself and a `/me` of
-another shape. `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
+cache, every failure mode, who may be signed for, drift, the assertion itself, a `/me` of
+another shape, the bounds on what comes back, the reviewed list and schema shape, a future
+`iat`. `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
 verifies the assertion as the function does, maps users, applies the manifest's role gate and
 schema, clamps on voice, and records every request.

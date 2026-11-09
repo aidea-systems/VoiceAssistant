@@ -120,3 +120,15 @@ user's email exists in that project's `public.users` with the Director role.
 1. The function URL on the dev project.
 2. The `/manifest` JSON (or let the assistant session pull it with the secret).
 3. Confirmation that the pilot Director's email is mapped in the dev project.
+
+## Addendum 2026-11-09, after the assistant side was built
+
+Two small asks when the function is next touched, neither blocking the first deploy:
+
+1. In the assertion check, also refuse an `iat` more than 30 s in the future
+   (`iat_in_future`). A token minted an hour ahead passes the current checks and outlives the
+   120 s `jti` memory. The assistant's fake refuses it already.
+2. The assistant side bounds what it reads from the function (256 KB, refusal text clipped to
+   200 characters, the voice clamps applied again) and holds its manifest snapshot to a reviewed
+   list of twelve tool names; a thirteenth exposed tool is refused on the assistant side until
+   someone reviews it there. If the exposed list changes, say so.
