@@ -175,6 +175,8 @@ export interface RunChatOptions {
   confirmations?: ConfirmationStore
   /** A confirmed write's ceiling, short for the test that lets it run out. */
   writeTimeoutMs?: number
+  /** `true` reads the packs' `allowedTools` as the owner would and builds the request with it. */
+  allowed?: boolean
 }
 
 export interface RunChatResult {
@@ -261,6 +263,7 @@ export async function runChat(
     ...opts.hooks,
   }
   const extras: ToolHandlerExtras = { requestId: 'req-test', channel, ...opts.extras }
+  const allowed = opts.allowed ? await registry.allowedTools(ctx, channel, controller.signal) : null
   await runOrchestrationLoop(
     ctx,
     {
@@ -275,8 +278,9 @@ export async function runChat(
         },
         { type: 'text', text: buildUserContext(ctx) },
       ],
-      tools: registry.anthropicTools(ctx, channel),
+      tools: registry.anthropicTools(ctx, channel, allowed),
       registry,
+      allowed,
       confirmations: opts.confirmations ?? new MemoryConfirmationStore(),
       logTag: '[test]',
       ...(opts.writeTimeoutMs !== undefined ? { writeTimeoutMs: opts.writeTimeoutMs } : {}),

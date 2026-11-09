@@ -7,7 +7,7 @@ import type { AuthContext } from '../auth.js'
 import type { Channel } from '../channel.js'
 import { errorReason, log } from '../log.js'
 import type { ToolHandlerExtras } from '../tools/define.js'
-import type { ToolRegistry } from '../tools/registry.js'
+import type { AllowedTools, ToolRegistry } from '../tools/registry.js'
 import { CONFIRMATION_TTL_MS, inputHash, pendingResult } from './confirmations.js'
 import type { ConfirmationStore } from './ports.js'
 
@@ -31,6 +31,8 @@ export interface DispatchContext {
   sessionId: string
   confirmations: ConfirmationStore
   logTag: string
+  /** The per-user restriction the request's tools were built with (`LoopConfig.allowed`). */
+  allowed?: AllowedTools
   /** The clock, for the confirmation's expiry; `Date.now` by default. */
   now?: () => number
 }
@@ -60,9 +62,9 @@ export async function dispatchTool(
   hold?: () => AbortSignal,
 ): Promise<DispatchResult> {
   const { registry, ctx, extras, channel, logTag } = dc
-  const tool = registry.find(ctx, name, channel)
+  const tool = registry.find(ctx, name, channel, dc.allowed)
   if (!tool) {
-    const reason = registry.refusalReason(ctx, name, channel) ?? 'unknown_tool'
+    const reason = registry.refusalReason(ctx, name, channel, dc.allowed) ?? 'unknown_tool'
     log('warn', logTag, 'tool refused at dispatch', {
       userId: ctx.userId,
       role: ctx.role,

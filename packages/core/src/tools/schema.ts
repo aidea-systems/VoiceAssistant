@@ -17,7 +17,11 @@ type JsonObject = Record<string, unknown>
 export function toAnthropicTool(def: ToolDefinition<unknown>): Anthropic.Tool {
   // `io: 'input'`: optional and defaulted fields are optional for the model; zod fills the
   // defaults at dispatch.
-  const generated = z.toJSONSchema(def.input, { target: 'draft-2020-12', io: 'input' }) as JsonObject
+  // A pack that took its schema from the system it fronts advertises that one (`inputSchema`),
+  // its zod built from the same document; otherwise the schema is derived from zod.
+  const generated = def.inputSchema
+    ? (structuredClone(def.inputSchema) as JsonObject)
+    : (z.toJSONSchema(def.input, { target: 'draft-2020-12', io: 'input' }) as JsonObject)
   delete generated.$schema
   if (generated.type !== 'object') throw new Error(`tool ${def.name}: input schema must be an object`)
   const schema = closeObjects(transformJSONSchema(generated)) as Anthropic.Tool.InputSchema
