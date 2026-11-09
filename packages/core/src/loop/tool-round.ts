@@ -58,6 +58,7 @@ export async function runToolRound(
       sessionId: input.sessionId,
       confirmations: config.confirmations,
       logTag: config.logTag,
+      allowed: config.allowed,
     }
     // A confirmed write keeps its real outcome through an abort: the row says what happened.
     const holds: DispatchHold[] = toolUses.map(() => ({ held: false }))

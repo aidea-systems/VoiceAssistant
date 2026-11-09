@@ -153,9 +153,12 @@ export interface LoopConfig {
   settings: ChannelSettings
   /** The static block (with the cache breakpoint) first, then the uncached per-user blocks. */
   system: Anthropic.TextBlockParam[]
-  /** `registry.anthropicTools(ctx, channel)`: sorted, strict, breakpoint on the last. */
+  /** `registry.anthropicTools(ctx, channel, allowed)`: sorted, strict, breakpoint on the last. */
   tools: Anthropic.Tool[]
   registry: ToolRegistry
+  /** The per-user restriction `tools` was built with (`registry.allowedTools`); dispatch
+   * resolves names through the same one (invariant 5). */
+  allowed?: ReadonlySet<string> | null
   /** Pending confirmations of this session (the write protocol). */
   confirmations: ConfirmationStore
   /** The owning channel's log tag, e.g. `[api]`. */

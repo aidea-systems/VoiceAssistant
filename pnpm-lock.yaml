@@ -72,6 +72,9 @@ importers:
       '@va/tools-demo':
         specifier: workspace:*
         version: link:../../packages/tools-demo
+      '@va/tools-landmark':
+        specifier: workspace:*
+        version: link:../../packages/tools-landmark
       '@va/tools-mail':
         specifier: workspace:*
         version: link:../../packages/tools-mail
@@ -124,6 +127,9 @@ importers:
       '@va/tools-demo':
         specifier: workspace:*
         version: link:../../packages/tools-demo
+      '@va/tools-landmark':
+        specifier: workspace:*
+        version: link:../../packages/tools-landmark
       '@va/tools-mail':
         specifier: workspace:*
         version: link:../../packages/tools-mail
@@ -259,6 +265,19 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/tools-landmark:
+    dependencies:
+      '@va/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
 
   packages/tools-mail:
     dependencies:

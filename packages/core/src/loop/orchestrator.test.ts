@@ -24,6 +24,7 @@ import {
   toolResultSentToModel,
 } from '../test/harness.js'
 import { handlerEvents, EDGE_PACK, openGate, TEST_ALLOWLIST, TEST_PACK } from '../test/tools.js'
+import type { ToolPack } from '../tools/define.js'
 import { BufferedSink } from '../sinks/buffered.js'
 import { TRUNCATED_HR } from './orchestrator.js'
 import type { MessageRow } from './ports.js'
@@ -203,6 +204,30 @@ describe('orchestration loop', () => {
       ),
     ).toBe(true)
   })
+
+  scenario(
+    'E39 a tool outside the per-user restriction (a pack\'s allowedTools) is not advertised and is refused at dispatch',
+    async () => {
+      anthropic.script(callTools(toolUse('whoami', {}), toolUse('echo', { text: 'a' })), answer('ok'))
+      const ctx = await authAs('member')
+      const gated: ToolPack = {
+        ...TEST_PACK,
+        allowedTools: async (_ctx, channel) => (channel === 'chat' ? new Set(['echo']) : null),
+      }
+      const run = await runChat(ctx, 'x', { packs: [gated], allowed: true })
+      expect(anthropic.calls[0]!.body.tools!.map((t) => t.name)).toEqual(['echo'])
+      expect(run.sink.toolResults[0]).toMatchObject({
+        isError: true,
+        output: { error: expect.stringMatching(/not_permitted_for_user/) },
+      })
+      expect(run.sink.toolResults[1]).toMatchObject({ isError: false, output: { echoed: 'a' } })
+      expect(
+        logs.some(
+          (l) => l.line.includes('tool refused at dispatch') && l.line.includes('not_permitted_for_user'),
+        ),
+      ).toBe(true)
+    },
+  )
 
   scenario('E09 a tool off the channel allowlist is refused at dispatch on voice', async () => {
     anthropic.script(callTools(toolUse('write_note', { text: 'x' })), answer('ok'))

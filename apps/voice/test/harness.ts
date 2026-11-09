@@ -15,6 +15,7 @@ import {
 } from '@va/core'
 import { anthropicClient, db, scenario as coreScenario, USERS, uuid } from '@va/core/test'
 import { createServiceClient } from '@va/db'
+import type { LandmarkPackConfig } from '@va/tools-landmark'
 
 import { AssistantAgent, type EngineChunk } from '../src/assistant-llm.js'
 import { CallIdentity, type CallIdentityOptions, sha256Hex } from '../src/call.js'
@@ -62,6 +63,8 @@ export interface DepsOptions {
   packs?: ToolPack[]
   allowlist?: ChannelAllowlist
   settings?: Partial<ChannelSettings>
+  /** The worker's own composition with the Landmark pack (the fake's url, secret and fetch). */
+  landmark?: LandmarkPackConfig
 }
 
 export function deps(opts: DepsOptions = {}): VoiceDeps {
@@ -69,7 +72,9 @@ export function deps(opts: DepsOptions = {}): VoiceDeps {
     anthropic: anthropicClient(),
     // The worker's own composition unless a scenario brings its packs (the mail pack answers
     // outlook_unavailable here: no token store).
-    registry: opts.packs ? new ToolRegistry(opts.packs, opts.allowlist ?? VOICE_ALLOWLIST) : createRegistry(),
+    registry: opts.packs
+      ? new ToolRegistry(opts.packs, opts.allowlist ?? VOICE_ALLOWLIST)
+      : createRegistry(null, opts.landmark ?? null),
     channel: opts.channel ?? 'voice',
     settings: { ...channelSettings(opts.channel ?? 'voice', {}), ...opts.settings },
     clock: () => new Date(NOW),

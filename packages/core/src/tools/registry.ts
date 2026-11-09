@@ -17,7 +17,12 @@ import { toAnthropicTool } from './schema.js'
  */
 export type ChannelAllowlist = Partial<Record<Channel, 'all' | readonly string[]>>
 
-export type RefusalReason = 'unknown_tool' | 'not_permitted_for_role' | 'not_permitted_on_channel'
+export type RefusalReason =
+  'unknown_tool' | 'not_permitted_for_role' | 'not_permitted_on_channel' | 'not_permitted_for_user'
+
+/** A per-user restriction from `ToolRegistry.allowedTools`: the names the user may use now, or
+ * null (and undefined) for none. Passed to `select`, `find` and `anthropicTools` alike. */
+export type AllowedTools = ReadonlySet<string> | null | undefined
 
 export class ToolRegistry {
   private readonly byName = new Map<string, ToolDefinition<unknown>>()
@@ -73,6 +78,40 @@ export class ToolRegistry {
     return blocks
   }
 
+  /**
+   * The per-user restriction for this caller on this channel: every pack with an `allowedTools`
+   * hook and at least one tool advertised to this role on this channel is asked, as the user,
+   * and a set it returns keeps only those of its tools. The result is the full set of names the
+   * user may use now (the other packs' tools included), or null when no pack restricted
+   * anything, so a channel without such a pack costs nothing. A hook that throws is logged
+   * (`allowed tools failed`, the pack's name, no content) and leaves its pack unrestricted, as
+   * a null answer does: dispatch then meets the pack's own error.
+   */
+  async allowedTools(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<ReadonlySet<string> | null> {
+    const advertised = new Set(this.select(ctx, channel).map((t) => t.name))
+    const asked = this.packs.filter((p) => p.allowedTools && p.tools.some((t) => advertised.has(t.name)))
+    if (asked.length === 0) return null
+    const results = await Promise.allSettled(asked.map((p) => p.allowedTools!(ctx, channel, signal)))
+    const allowed = new Set(this.byName.keys())
+    let restricted = false
+    results.forEach((r, i) => {
+      const pack = asked[i]!
+      if (r.status === 'rejected') {
+        log('warn', '[core]', 'allowed tools failed', {
+          pack: pack.name,
+          channel,
+          user_id: ctx.userId,
+          reason: errorReason(r.reason),
+        })
+        return
+      }
+      if (r.value === null) return
+      restricted = true
+      for (const tool of pack.tools) if (!r.value.has(tool.name)) allowed.delete(tool.name)
+    })
+    return restricted ? allowed : null
+  }
+
   /** Every registered tool, sorted by name. */
   all(): ToolDefinition<unknown>[] {
     return [...this.byName.values()].sort(byName)
@@ -83,36 +122,53 @@ export class ToolRegistry {
     return this.byName.has(name)
   }
 
-  /** The tools this role may use on this channel (role ∩ channel), sorted by name. */
-  select(ctx: Pick<AuthContext, 'role'>, channel: Channel): ToolDefinition<unknown>[] {
-    const allowed = this.allowlist[channel] ?? []
+  /** The tools this role may use on this channel (role ∩ channel ∩ the per-user restriction,
+   * when one is given), sorted by name. */
+  select(ctx: Pick<AuthContext, 'role'>, channel: Channel, allowed?: AllowedTools): ToolDefinition<unknown>[] {
+    const names = this.allowlist[channel] ?? []
     return this.all().filter(
-      (t) => t.requiredRoles.includes(ctx.role) && (allowed === 'all' || allowed.includes(t.name)),
+      (t) =>
+        t.requiredRoles.includes(ctx.role) &&
+        (names === 'all' || names.includes(t.name)) &&
+        (allowed == null || allowed.has(t.name)),
     )
   }
 
   /** Resolves a name through the same filter as `select`. Undefined for unknown and forbidden
    * alike; `refusalReason` says which. */
-  find(ctx: Pick<AuthContext, 'role'>, name: string, channel: Channel): ToolDefinition<unknown> | undefined {
-    return this.select(ctx, channel).find((t) => t.name === name)
+  find(
+    ctx: Pick<AuthContext, 'role'>,
+    name: string,
+    channel: Channel,
+    allowed?: AllowedTools,
+  ): ToolDefinition<unknown> | undefined {
+    return this.select(ctx, channel, allowed).find((t) => t.name === name)
   }
 
   /** Why `find` returned undefined, for the dispatch log and the `is_error` result. */
-  refusalReason(ctx: Pick<AuthContext, 'role'>, name: string, channel: Channel): RefusalReason | null {
-    if (this.find(ctx, name, channel)) return null
+  refusalReason(
+    ctx: Pick<AuthContext, 'role'>,
+    name: string,
+    channel: Channel,
+    allowed?: AllowedTools,
+  ): RefusalReason | null {
+    if (this.find(ctx, name, channel, allowed)) return null
     if (!this.byName.has(name)) return 'unknown_tool'
     const tool = this.byName.get(name)!
     if (!tool.requiredRoles.includes(ctx.role)) return 'not_permitted_for_role'
-    return 'not_permitted_on_channel'
+    if (!this.find(ctx, name, channel)) return 'not_permitted_on_channel'
+    return 'not_permitted_for_user'
   }
 
   /** The `tools` array for a request: deterministic order (by name), `strict: true` on every
-   * tool, the last one carrying the cache breakpoint. Built once per role and channel. */
-  anthropicTools(ctx: Pick<AuthContext, 'role'>, channel: Channel): Anthropic.Tool[] {
-    const key = `${ctx.role}:${channel}`
+   * tool, the last one carrying the cache breakpoint. Built once per role, channel and
+   * per-user restriction (a restriction takes one of a few values: the roles of the system
+   * behind the pack). */
+  anthropicTools(ctx: Pick<AuthContext, 'role'>, channel: Channel, allowed?: AllowedTools): Anthropic.Tool[] {
+    const key = `${ctx.role}:${channel}:${allowed == null ? '*' : [...allowed].sort().join(',')}`
     let tools = this.advertised.get(key)
     if (!tools) {
-      tools = this.select(ctx, channel).map(toAnthropicTool)
+      tools = this.select(ctx, channel, allowed).map(toAnthropicTool)
       const last = tools.at(-1)
       if (last) last.cache_control = { type: 'ephemeral' }
       this.advertised.set(key, tools)

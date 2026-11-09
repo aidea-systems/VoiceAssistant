@@ -15,8 +15,14 @@ export interface AuthContext {
   /** `auth.users.id` */
   authUserId: string
   role: Role
+  /** `public.users.email`, the address the account was created for. */
   email: string | null
   language: Language
+  /** The auth account as GoTrue holds it on this request: its address, when it was confirmed
+   * (null: never) and until when it is banned (null: not banned). What signs for the user
+   * towards another system (the Landmark assertion) decides from these, so no tool needs a
+   * second identity read. */
+  auth: { email: string | null; emailConfirmedAt: string | null; bannedUntil: string | null }
   /** Anon key plus the user's JWT: RLS applies. Tools read through this one. */
   userClient: DbClient
   /** Service role: persistence only, always with an explicit `user_id` or `session_id` filter. */
@@ -102,6 +108,11 @@ export async function authenticateToken(jwt: string): Promise<AuthResult> {
     role: profile.role as Role,
     email: profile.email,
     language: profile.language as Language,
+    auth: {
+      email: authUser.email ?? null,
+      emailConfirmedAt: authUser.email_confirmed_at ?? null,
+      bannedUntil: (authUser as { banned_until?: string }).banned_until ?? null,
+    },
     userClient,
     serviceClient,
   }

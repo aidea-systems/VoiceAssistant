@@ -1,6 +1,6 @@
 # Backlog — release
 
-Ids: REL-15 (next free)
+Ids: REL-16 (next free)
 
 Things written but not live: migrations to apply (dev first, with the check to run after), secrets
 to set, and checks nobody has run. Tick an item when it is done on every environment it names.
@@ -69,6 +69,27 @@ three sets of checks) and says how to paste the results back.
       add to them), its body is the plain text as dictated, and `flag_mail` shows the flag in
       Outlook. If the reply also reached the `Reply-To`, stop: the pack must switch to
       `createReply` + PATCH + `send` (the security review of 13c, finding 5).
+
+- [ ] REL-15 · Part 14: the Landmark live check, once David has carried out
+      `docs/requests/landmark-assistant-api-request.md` on Landmark's `feat/assistant-api` and
+      deployed the function to Landmark's dev project (`nxvbglegqcgxlxvyfuht`). In order: (a) the
+      operator generates the secret (`openssl rand -base64 48`), gives it to David for
+      `supabase secrets set ASSISTANT_API_SECRET=…`, and puts it with the function URL in our
+      api and voice env stores (`LANDMARK_API_URL`, `LANDMARK_ASSISTANT_SECRET`; `docs/OPS.md`);
+      (b) raise _token verifications_ under Auth → Rate Limits on Landmark's dev project
+      (Landmark `SEC-A14`): every call and every `/me` is one `/verify` from our one VM; (c)
+      `pnpm --filter @va/tools-landmark manifest:pull` with the two values in the shell, and the
+      diff of `manifest.json` is empty or reviewed (the snapshot of 2026-11-09 was assembled from
+      Landmark's branch, not pulled); (d) the pilot Director's email is mapped in that project's
+      `public.users` with an `auth_user_id`, and the same address is the confirmed email of their
+      assistant account (`REL-14` first: with sign-up open the pack's confirmed-address check
+      protects nothing, `OPS-9`; check that a `POST` to `$SUPABASE_URL/auth/v1/signup` answers
+      `422 signup_disabled` before the two variables go in); (e) one question per tool from chat and from a call
+      against the dev project, the twelve of `docs/LANDMARK.md`, and one as a user Landmark does
+      not know (no Landmark tool advertised); (f) `/bench-voice` after, the row in `docs/VOICE.md`
+      (the prompt grew by Landmark's rules). Check: the `[landmark]` request lines carry status
+      200 with the tool name, Landmark's `[assistant-api]` lines carry the mapped user id, and
+      neither carries an address or a token.
 
 - [ ] REL-14 · Part 13a, and a precondition of Part 14: public sign-up off on every Supabase
       project the assistant uses (Dashboard → Authentication → Sign In / Providers → "Allow new

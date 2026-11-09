@@ -23,6 +23,11 @@ export interface ToolDefinition<I> {
   description: string
   /** zod 4 object schema; every property has a `.describe()`. Re-validated at dispatch. */
   input: z.ZodType<I>
+  /** The JSON Schema to advertise instead of one derived from `input`: for a pack that fronts
+   * another system and took the schema from it (the Landmark manifest), with `input` built from
+   * the same document, so what the model sees is what that system validates. Reduced to the
+   * strict form like a derived one. */
+  inputSchema?: Record<string, unknown>
   requiredRoles: readonly Role[]
   /** True only when the handler never inserts, updates, deletes or calls a writing RPC. A tool
    * an app names for a spoken channel is read-only or carries `confirmation`; the registry
@@ -61,6 +66,16 @@ export interface ToolPack {
    * included: the one deliberate exception to re-reading everything but identity.
    */
   userContext?(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<string | null>
+  /**
+   * Which of this pack's tools this user may use now, when an authority outside this process
+   * decides (the role Landmark holds for the user, read from its `/me`): the names to keep, an
+   * empty set to hide them all (the user has no account there), or `null` for no restriction,
+   * which is also the answer when the authority cannot be reached (dispatch then meets the
+   * error). Read as the user, bounded by `signal`; the pack caches the answer for at most 60 s
+   * per user (invariant 7). The registry applies the result at advertisement and at dispatch
+   * alike (`ToolRegistry.allowedTools`), so the model never runs a name it was not shown.
+   */
+  allowedTools?(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<ReadonlySet<string> | null>
 }
 
 const NAME = /^[a-z][a-z0-9_]*$/

@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { DbClient, Json } from '@va/db'
 
 import {
+  type AllowedTools,
   type AuthContext,
   type ConfirmationStore,
   type ConfirmEvent,
@@ -104,6 +105,8 @@ export interface VoiceTurnInput {
   pickEarlyFiller?: () => string
   /** The packs' per-user blocks for this caller (`CallSession.userContextFor`), read once per call. */
   userContext?: readonly string[]
+  /** The packs' per-user gate for this turn (`CallSession.allowedToolsFor`); null is no restriction. */
+  allowed?: AllowedTools
 }
 
 /** A loop mark and when it fired, in ms since the turn started. */
@@ -134,7 +137,7 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
   const { deps, ctx, sessionId, userText, requestId, signal } = input
   const t0 = performance.now()
   const ids = { request_id: requestId, user_id: ctx.userId, session_id: sessionId }
-  const config = voiceLoopConfig(deps, ctx, input.confirmations, input.userContext)
+  const config = voiceLoopConfig(deps, ctx, input.confirmations, input.userContext, input.allowed ?? null)
   const settings = deps.settings
 
   const sink = new SpokenTextSink(input.say, input.end, {

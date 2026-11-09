@@ -6,6 +6,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 
 import {
+  type AllowedTools,
   type AuthContext,
   buildStaticSystemPrompt,
   buildUserContext,
@@ -34,12 +35,15 @@ export interface VoiceDeps {
 
 /** `confirmations` is the call's own store (`CallSession` keeps one); the warm-up needs none.
  * `userContext` is the packs' per-user blocks the call read once (`CallSession.userContextFor`),
- * appended to the uncached user block; the warm-up sends the same blocks (`warm.ts`). */
+ * appended to the uncached user block; `allowed` the packs' per-user gate
+ * (`CallSession.allowedToolsFor`, Landmark's role), which shapes the tools array and binds
+ * dispatch; the warm-up sends the same blocks and tools (`warm.ts`). */
 export function voiceLoopConfig(
   deps: VoiceDeps,
   ctx: AuthContext,
   confirmations: ConfirmationStore = new MemoryConfirmationStore(),
   userContext: readonly string[] = [],
+  allowed: AllowedTools = null,
 ): LoopConfig {
   return {
     anthropic: deps.anthropic,
@@ -54,8 +58,9 @@ export function voiceLoopConfig(
       { type: 'text', text: buildUserContext(ctx, userContext) },
       { type: 'text', text: dateLine(deps.clock()) },
     ],
-    tools: deps.registry.anthropicTools(ctx, deps.channel),
+    tools: deps.registry.anthropicTools(ctx, deps.channel, allowed),
     registry: deps.registry,
+    allowed,
     confirmations,
     logTag: LOG_TAG,
   }

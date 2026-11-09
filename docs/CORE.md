@@ -303,6 +303,11 @@ from the catalogue. It parses no `Request`: the API extracts the bearer token, t
 takes it from `voice_calls`. Identity is re-read on every request; the worker may cache it for
 60 s per call. Log lines carry `[core:auth]`, ids and codes, never the token.
 
+`AuthContext.auth` carries the auth account as GoTrue returned it for the request: its address,
+`emailConfirmedAt` and `bannedUntil`. A pack that signs for the user towards another system (the
+Landmark assertion) decides from these and needs no identity read of its own (`subjectOf` in
+`@va/tools-landmark`, `L09`).
+
 ## Errors
 
 `ErrorCode` is the closed set every channel uses; `MESSAGES_HR` has the user-facing Croatian
@@ -377,17 +382,29 @@ defineTool({
 output for that channel through `extras.channel`: on voice no ids or timestamps, at most five
 items, short text (the demo pack's two reads are the pattern).
 
-A pack is `{ name, tools, domainRules?, userContext? }` (`userContext`: the per-user block
-above, read as the user once per call). `ToolRegistry(packs, allowlist)` throws on a
-duplicate name and on an allowlist that names an unknown or a write tool.
-`select(ctx, channel)` is role ∩ channel, sorted by name; `find(ctx, name, channel)` resolves a
-name through the same filter (undefined for unknown and forbidden alike; `refusalReason` says
-which: `unknown_tool`, `not_permitted_for_role`, `not_permitted_on_channel`); `anthropicTools(ctx,
-channel)` is the request's `tools` array, sorted, `strict: true` on every tool, the last one
-carrying `cache_control`, memoised per role and channel.
+A pack is `{ name, tools, domainRules?, userContext?, allowedTools? }` (`userContext`: the
+per-user block above, read as the user once per call; `allowedTools(ctx, channel, signal)`: the
+names among the pack's tools this user may call now, when an authority outside the process
+decides, such as the role Landmark holds for the user; an empty set hides them all, `null` is
+no restriction and also the answer when the authority cannot be reached). `ToolRegistry(packs,
+allowlist)` throws on a duplicate name and on an allowlist that names an unknown or a write
+tool. `allowedTools(ctx, channel, signal)` asks the packs with the hook and a tool on the
+channel and folds their answers into one set of permitted names (a throwing pack is logged,
+`allowed tools failed`, and left unrestricted), or `null` when no pack restricted anything
+(`T11`); the owner reads it before the request and hands the same value to `anthropicTools`
+and to the loop (`LoopConfig.allowed`), which applies it at dispatch (`E39`, invariant 5).
+`select(ctx, channel, allowed?)` is role ∩ channel ∩ the restriction, sorted by name; `find(ctx,
+name, channel, allowed?)` resolves a name through the same filter (undefined for unknown and
+forbidden alike; `refusalReason` says which: `unknown_tool`, `not_permitted_for_role`,
+`not_permitted_on_channel`, `not_permitted_for_user`); `anthropicTools(ctx, channel, allowed?)`
+is the request's `tools` array, sorted, `strict: true` on every tool, the last one carrying
+`cache_control`, memoised per role, channel and restriction (a restriction takes one of a few
+values: the roles of the system behind the pack).
 
 `toAnthropicTool(def)` derives the JSON Schema from zod (`io: 'input'`, so optional and
-defaulted fields are optional for the model and zod fills the defaults at dispatch), reduces it
+defaulted fields are optional for the model and zod fills the defaults at dispatch), or takes
+the definition's own `inputSchema` when a pack fronts another system and took the schema from it
+with zod built from the same document (the Landmark pack, `T12`), reduces it
 with the SDK's strict transform (keywords strict mode does not take, such as `minLength`,
 `pattern`, `minimum` and `default`, are folded into the property description; `format: uuid`
 stays) and sets `additionalProperties: false` and `required` on every object node. If the API ever rejects a
@@ -405,25 +422,29 @@ channel to every registered tool its role allows, a list names what it gets, and
 absent from the record gets nothing (`T08`). Core ships no allowlist: the app that composes the
 packs supplies it, so core never names a pack's tools (`tools-* → core`, never back). The API
 (`apps/api/src/tools.ts`, `API_ALLOWLIST = { chat: 'all' }`) serves chat; the worker
-(`apps/voice/src/tools.ts`, `VOICE_ALLOWLIST`: the two demo reads and the four mail reads,
-the same list for `voice` and `phone`) names
+(`apps/voice/src/tools.ts`, `VOICE_ALLOWLIST`: the two demo reads, the four mail reads and the
+two confirmed mail writes, the same list for `voice` and `phone`; `voiceAllowlist(true)` adds
+Landmark's twelve when that pack is registered, `W45`) names
 what a caller may reach by voice, in a reviewed diff that says why the output is safe to read
-aloud (no ids spoken, ≤ 5 items, plain numbers). Every voice tool is `readOnly: true`, asserted
-when the registry is built (`T02`, `W20`).
+aloud (no ids spoken, ≤ 5 items, plain numbers). Every voice tool is `readOnly: true` or
+confirmed, asserted when the registry is built (`T02`, `W20`).
 
 ### Catalogue
 
-| Tool            | Pack | Roles         | readOnly      | Channels           | What                                                                                                                                                                                    |
-| --------------- | ---- | ------------- | ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `search_items`  | demo | admin, member | yes           | chat, voice, phone | substring search of `demo_items` by name, ≤ 100 (default 20), sorted, with the true total; voice and phone: ≤ 5 items, no ids                                                           |
-| `get_item`      | demo | admin, member | yes           | chat, voice, phone | one item by id; `{ error: 'item not found' }` when missing; voice and phone: no id, clipped text                                                                                        |
-| `create_note`   | demo | admin, member | no, confirmed | chat               | attaches a user-written note to an item (`demo_notes`) after the user confirmed the preview (Part 12)                                                                                   |
-| `reply_mail`    | mail | admin, member | no, confirmed | chat, voice, phone | replies to the sender of one message (the From address, never a Reply-To) with the user's text as a plain-text body; ≤ 2000 characters (500 on a call); no other recipient can be named |
-| `flag_mail`     | mail | admin, member | no, confirmed | chat, voice, phone | flags one message for follow-up; nothing else                                                                                                                                           |
-| `list_mail`     | mail | admin, member | yes           | chat, voice, phone | the user's own inbox, unread by default, newest first, with the inbox unread count; ≤ 20 (default 10); voice: ≤ 5, names only, 120-character previews                                   |
-| `read_mail`     | mail | admin, member | yes           | chat, voice, phone | one message by ref (`m1` …): the new text, signature and disclaimer cut, clipped to 3000 (voice 600) characters; does not mark it read                                                  |
-| `search_mail`   | mail | admin, member | yes           | chat, voice, phone | `$search` as one quoted KQL phrase over every folder, `*` refused; ≤ 10 (voice 5)                                                                                                       |
-| `list_calendar` | mail | admin, member | yes           | chat, voice, phone | the events of one Europe/Zagreb day (today by default); ≤ 20; voice: ≤ 5 live events, times only                                                                                        |
+| Tool                                                                                                                                                   | Pack     | Roles                                                      | readOnly      | Channels           | What                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------- | ------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_items`                                                                                                                                         | demo     | admin, member                                              | yes           | chat, voice, phone | substring search of `demo_items` by name, ≤ 100 (default 20), sorted, with the true total; voice and phone: ≤ 5 items, no ids                                                                                                                                                                                                                      |
+| `get_item`                                                                                                                                             | demo     | admin, member                                              | yes           | chat, voice, phone | one item by id; `{ error: 'item not found' }` when missing; voice and phone: no id, clipped text                                                                                                                                                                                                                                                   |
+| `create_note`                                                                                                                                          | demo     | admin, member                                              | no, confirmed | chat               | attaches a user-written note to an item (`demo_notes`) after the user confirmed the preview (Part 12)                                                                                                                                                                                                                                              |
+| `reply_mail`                                                                                                                                           | mail     | admin, member                                              | no, confirmed | chat, voice, phone | replies to the sender of one message (the From address, never a Reply-To) with the user's text as a plain-text body; ≤ 2000 characters (500 on a call); no other recipient can be named                                                                                                                                                            |
+| `flag_mail`                                                                                                                                            | mail     | admin, member                                              | no, confirmed | chat, voice, phone | flags one message for follow-up; nothing else                                                                                                                                                                                                                                                                                                      |
+| `list_mail`                                                                                                                                            | mail     | admin, member                                              | yes           | chat, voice, phone | the user's own inbox, unread by default, newest first, with the inbox unread count; ≤ 20 (default 10); voice: ≤ 5, names only, 120-character previews                                                                                                                                                                                              |
+| `read_mail`                                                                                                                                            | mail     | admin, member                                              | yes           | chat, voice, phone | one message by ref (`m1` …): the new text, signature and disclaimer cut, clipped to 3000 (voice 600) characters; does not mark it read                                                                                                                                                                                                             |
+| `search_mail`                                                                                                                                          | mail     | admin, member                                              | yes           | chat, voice, phone | `$search` as one quoted KQL phrase over every folder, `*` refused; ≤ 10 (voice 5)                                                                                                                                                                                                                                                                  |
+| `list_calendar`                                                                                                                                        | mail     | admin, member                                              | yes           | chat, voice, phone | the events of one Europe/Zagreb day (today by default); ≤ 20; voice: ≤ 5 live events, times only                                                                                                                                                                                                                                                   |
+| `search_projects`, `get_project_details`, `list_project_phases`, `search_subcontractors`, `list_cost_classifications`, `list_contracts`, `search_help` | landmark | admin, member; Landmark: every role                        | yes           | chat, voice, phone | Landmark's construction-side reads through its `assistant-api`, as the Landmark user the caller is; on voice and phone Landmark clamps (≤ 5 items with the total, 200-character text, ids kept for chaining and never spoken). Registered only where `LANDMARK_API_URL` is set; descriptions and schemas from `manifest.json` (`docs/LANDMARK.md`) |
+| `get_subcontractor_payment_status`, `list_payments_for_subcontractor`, `get_invoice_summary`, `get_project_financial_summary`                          | landmark | admin, member; Landmark: Director, Accounting              | yes           | chat, voice, phone | the finance reads of the same; hidden from a user whose Landmark role is not one of the two (`/me`), refused at dispatch otherwise                                                                                                                                                                                                                 |
+| `list_unpaid_invoices`                                                                                                                                 | landmark | admin, member; Landmark: Director, Accounting, Supervision | yes           | chat, voice, phone | unpaid and partially paid invoices by subcontractor or project; Supervision sees its own projects (Landmark's RLS)                                                                                                                                                                                                                                 |
 
 `demo_items` and `demo_notes` have a migration (`20261029100000_demo_tables.sql`, `docs/DB.md`)
 and the local seed carries the nine items the fakes do; the demo pack still narrows the user
@@ -436,7 +457,7 @@ client to a hand-written type in `demo-db.ts` until the migration is applied to 
 `/new-tool <pack> <name> <one line>` walks it: the `defineTool` block in
 `packages/<pack>/src/tools/<name>.ts`, registration in the pack's `tools` array, the voice
 allowlist decision (`VOICE_ALLOWLIST` in `apps/voice/src/tools.ts`, with the reason in the
-commit), a scenario test through the loop (`runChat`, as `D10` in the demo pack) and
+commit; a pack that fronts another system's gate adds `allowedTools`, as the Landmark pack does), a scenario test through the loop (`runChat`, as `D10` in the demo pack) and
 the `tool-security-reviewer` agent. Escape `\\`, `%` and `_` before any `ilike` and reject `*` in the schema (PostgREST reads `*` as `%` and cannot be made to take it literally; `escapeLike` and `NO_STAR` in the demo pack are the pattern), never interpolate raw input into `.or()`, cap lists in the query itself (not only in the schema), and update the catalogue above.
 
 ### How to add a channel

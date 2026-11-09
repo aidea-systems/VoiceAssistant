@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 import Anthropic from '@anthropic-ai/sdk'
 
-import { authenticateToken, type AuthContext, channelSettings } from '@va/core'
+import { type AllowedTools, authenticateToken, type AuthContext, channelSettings } from '@va/core'
 
 import { type VoiceDeps } from '../src/config.js'
 import { createMetrics } from '../src/metrics.js'
@@ -119,6 +119,7 @@ async function ask(
   sessionId: string,
   q: Question,
   userContext: readonly string[],
+  allowed: AllowedTools,
 ): Promise<Result> {
   let firstCacheRead: number | null = null
   const result = await runVoiceTurn({
@@ -135,6 +136,7 @@ async function ask(
     end: async () => {},
     signal: new AbortController().signal,
     userContext,
+    allowed,
   })
   await result.persisted
   // The first call's cache read is what the warm-up and the static prompt buy.
@@ -176,12 +178,15 @@ async function main(): Promise<void> {
   console.log(
     `user context: ${userContext.length} block(s), ${userContext.reduce((n, b) => n + b.length, 0)} chars`,
   )
+  // The packs' per-user gate (Landmark's role), as a call reads it; null when no pack restricts.
+  const allowed = await deps.registry.allowedTools(ctx, deps.channel, new AbortController().signal)
+  console.log(`allowed tools: ${allowed === null ? 'no restriction' : `${allowed.size} names`}`)
   try {
     if (process.argv[2] === 'first') {
-      const warmed = process.argv[3] === 'warm' ? await warm(deps, ctx, userContext) : null
+      const warmed = process.argv[3] === 'warm' ? await warm(deps, ctx, userContext, allowed) : null
       if (warmed) await new Promise((r) => setTimeout(r, 3000))
       const q = questions()[0]!
-      const r = await ask(deps, ctx, session.id, q, userContext)
+      const r = await ask(deps, ctx, session.id, q, userContext, allowed)
       const { spoken: _spoken, ...row } = r
       logRow({ mode: 'first', warm: warmed !== null, warmed, id: q.id, model: deps.settings.model, ...row })
       console.log(JSON.stringify({ warm: warmed !== null, warmed, ...row }))
@@ -192,7 +197,7 @@ async function main(): Promise<void> {
     const rows: Array<{ id: string; r: Result }> = []
     for (let run = 0; run < repeats; run++) {
       for (const q of qs) {
-        const r = await ask(deps, ctx, session.id, q, userContext)
+        const r = await ask(deps, ctx, session.id, q, userContext, allowed)
         rows.push({ id: q.id, r })
         const { spoken: _spoken, ...row } = r
         logRow({ run, id: q.id, model: deps.settings.model, effort: deps.settings.effort, ...row })

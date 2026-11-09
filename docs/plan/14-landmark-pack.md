@@ -182,12 +182,17 @@ packages/tools-landmark/
 
 - [ ] 14L (David, in Landmark): the request carried out; the function on the dev project; the URL
       and the manifest handed over; the pilot Director mapped.
-- [ ] 14V: the pack against the fake with a scenario per tool through the loop; the contract test
-      on the snapshot; the registry's extra filter with its tests (advertised equals dispatchable);
-      pack domain rules in the prompt with the prompt tests updated; the security reviewer run.
+- [x] 14V: built 2026-11-09 on `feat/landmark-pack` (`docs/LANDMARK.md`): the pack against the
+      fake (`L01`–`L12`, the API `LA01`–`LA03`, the worker `W45`–`W47`); the snapshot's integrity
+      and the schema-from-manifest construction in place of a hand-written contract test (zod is
+      built from the manifest's schema and the schema is advertised as is, so there is nothing to
+      drift); the registry's per-user filter (`ToolPack.allowedTools`, `T11`, `E39`); the pack's
+      rules in the prompt; the security reviewer run. The decision is 0018 (0017 went to the
+      hosting move). Live check: `REL-15`.
 - [ ] The live check: one question per tool from chat and from a call against the dev project, with
       the caller mapped by email; the bench figures for the new prompt.
-- [ ] `docs/LANDMARK.md`, decision 0017, `docs/SECURITY.md`, `docs/OPS.md` (env), `/done` green.
+- [x] `docs/LANDMARK.md`, decision 0018, `docs/SECURITY.md`, `docs/OPS.md` (env), `/done` green
+      (2026-11-09).
 
 ## Answered (2026-11-04)
 

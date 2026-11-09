@@ -95,8 +95,25 @@ export const voiceEnvSchema = z
     MS_CLIENT_SECRET: optional,
     /** The same value as the API's: both seal and open the same rows. */
     INTEGRATIONS_KEY: optional.pipe(z.string().superRefine(validKey).optional()),
+    // The Landmark pack (Part 14, decision 0018): the API's two values. Both or none; without
+    // them the pack is not registered and the spoken allowlists stop at the demo and mail tools.
+    LANDMARK_API_URL: optional.pipe(
+      z
+        .url()
+        .transform((v) => v.replace(/\/+$/, ''))
+        .refine(
+          (v) => v.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(v),
+          'must be https outside localhost',
+        )
+        .optional(),
+    ),
+    LANDMARK_ASSISTANT_SECRET: optional.pipe(z.string().min(32).optional()),
   })
   .superRefine((env, ctx) => {
+    if ((env.LANDMARK_API_URL === undefined) !== (env.LANDMARK_ASSISTANT_SECRET === undefined)) {
+      const missing = env.LANDMARK_API_URL === undefined ? 'LANDMARK_API_URL' : 'LANDMARK_ASSISTANT_SECRET'
+      ctx.addIssue({ code: 'custom', path: [missing], message: 'required when the other LANDMARK_ variable is set' })
+    }
     const set = MICROSOFT_VARS.filter((name) => env[name] !== undefined)
     if (set.length > 0 && set.length < MICROSOFT_VARS.length) {
       for (const name of MICROSOFT_VARS.filter((n) => env[n] === undefined)) {
@@ -106,6 +123,15 @@ export const voiceEnvSchema = z
   })
 
 export type VoiceEnv = z.infer<typeof voiceEnvSchema>
+
+/** The Landmark pack's configuration, or null when its two variables are not set. */
+export function landmarkConfig(env: Pick<VoiceEnv, 'LANDMARK_API_URL' | 'LANDMARK_ASSISTANT_SECRET'>): {
+  url: string
+  secret: string
+} | null {
+  if (!env.LANDMARK_API_URL || !env.LANDMARK_ASSISTANT_SECRET) return null
+  return { url: env.LANDMARK_API_URL, secret: env.LANDMARK_ASSISTANT_SECRET }
+}
 
 export function parseVoiceEnv(source: Record<string, string | undefined>): VoiceEnv {
   const result = voiceEnvSchema.safeParse(source)

@@ -96,6 +96,9 @@ export function streamChatResponse(input: StreamInput): Response {
       }, settings.requestTimeoutMs)
 
       prependRouteContext(prep.messages, prep.route)
+      // The packs' per-user gate (Landmark's role from its /me, cached a minute): the request's
+      // tools and dispatch use the same answer (invariant 5). Never throws; null is no restriction.
+      const allowed = await deps.registry.allowedTools(ctx, 'chat', controller.signal)
       await runOrchestrationLoop(
         ctx,
         {
@@ -111,8 +114,9 @@ export function streamChatResponse(input: StreamInput): Response {
             { type: 'text', text: buildUserContext(ctx) },
             { type: 'text', text: dateLine(deps.clock()) },
           ],
-          tools: deps.registry.anthropicTools(ctx, 'chat'),
+          tools: deps.registry.anthropicTools(ctx, 'chat', allowed),
           registry: deps.registry,
+          allowed,
           confirmations: dbConfirmationStore(ctx, prep.sessionId, deps.clock),
           logTag: '[api]',
         },

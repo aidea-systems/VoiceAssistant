@@ -1,10 +1,20 @@
 # Backlog — voice
 
-Ids: VOICE-21 (next free)
+Ids: VOICE-22 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
 ## Open
+
+### VOICE-21 · Low · A UUID the model reads aloud is not scrubbed by `speakable()`
+
+- **Check:** By design so far (the prompt forbids speaking ids; the security review of Part 14, finding 2)
+- **Where:** `packages/core/src/sinks/speakable.ts`; the Landmark pack keeps Landmark's ids in
+  spoken tool results for chaining (`docs/LANDMARK.md`), the mail pack swaps Graph ids for refs
+- **What happens:** if the model ever reads an id, the TTS spells thirty-six hex characters; the
+  prompt is the only guard, and the prompt is not a boundary
+- **Fix direction:** a deterministic rule in `speakable()` that drops a UUID (or says "identifikator"),
+  with a table-test row; then the Landmark pack needs no refs of its own
 
 ### VOICE-16 · Low · Unknown numbers have no attempt counter, so a scan of the phone number is invisible
 

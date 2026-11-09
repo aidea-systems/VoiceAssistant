@@ -7,6 +7,7 @@
 import { type ChannelAllowlist, ToolRegistry } from '@va/core'
 import type { TokenStore } from '@va/integrations'
 import { demoPack } from '@va/tools-demo'
+import { createLandmarkPack, type LandmarkPackConfig } from '@va/tools-landmark'
 import { createMailPack } from '@va/tools-mail'
 
 import { mailTokenProvider } from './mail.js'
@@ -33,6 +34,28 @@ const SPOKEN_TOOLS = [
   'flag_mail',
 ] as const
 
+// Landmark's twelve (Part 14), written out here like every other spoken tool: every one is
+// read-only in Landmark's own catalogue and on the v1 list its voice plan chose; on `voice`
+// Landmark clamps the data (at most five items per list with the total, text clipped to 200
+// characters) and the pack clamps again on its side; the ids kept for chaining are never spoken
+// (the pack's rules). The pack hides what Landmark's role may not call (`/me`), and the phone
+// sends `channel: voice` like the in-app call. A thirteenth Landmark tool reaches a call only
+// by being added here and to the pack's reviewed list (`W45` pins both lists to each other).
+export const LANDMARK_SPOKEN_TOOLS = [
+  'search_projects',
+  'get_project_details',
+  'list_project_phases',
+  'search_subcontractors',
+  'list_cost_classifications',
+  'list_contracts',
+  'get_subcontractor_payment_status',
+  'list_unpaid_invoices',
+  'list_payments_for_subcontractor',
+  'get_invoice_summary',
+  'get_project_financial_summary',
+  'search_help',
+] as const
+
 /** One list for the two spoken channels: the phone (Part 11) hears exactly what the in-app
  * call hears. The readOnly assertion at load covers both keys. */
 export const VOICE_ALLOWLIST: ChannelAllowlist = {
@@ -40,13 +63,27 @@ export const VOICE_ALLOWLIST: ChannelAllowlist = {
   phone: SPOKEN_TOOLS,
 }
 
+/** The spoken allowlist of a process: the base list, plus Landmark's twelve when its pack is
+ * registered (an allowlist may not name an unregistered tool). */
+export function voiceAllowlist(withLandmark: boolean): ChannelAllowlist {
+  if (!withLandmark) return VOICE_ALLOWLIST
+  const spoken = [...SPOKEN_TOOLS, ...LANDMARK_SPOKEN_TOOLS]
+  return { voice: spoken, phone: spoken }
+}
+
 /** The mail pack is always registered, so the prompt and the tools are the same in every
  * deployment; without a token store (no MS_ variables) its tools answer outlook_unavailable.
- * `graphFetch` is the tests' fake Graph. */
-export function createRegistry(tokens: TokenStore | null = null, graphFetch?: typeof fetch): ToolRegistry {
+ * The Landmark pack joins only when the worker has its URL and secret (`landmarkConfig`).
+ * `graphFetch` is the tests' fake Graph; a Landmark config may carry the fake's fetch. */
+export function createRegistry(
+  tokens: TokenStore | null = null,
+  landmark: LandmarkPackConfig | null = null,
+  graphFetch?: typeof fetch,
+): ToolRegistry {
   const mail = createMailPack({
     token: mailTokenProvider(tokens),
     ...(graphFetch ? { fetch: graphFetch } : {}),
   })
-  return new ToolRegistry([demoPack, mail], VOICE_ALLOWLIST)
+  const packs = [demoPack, mail, ...(landmark ? [createLandmarkPack(landmark)] : [])]
+  return new ToolRegistry(packs, voiceAllowlist(landmark !== null))
 }

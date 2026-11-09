@@ -271,4 +271,114 @@ describe('ToolRegistry', () => {
     expect(await registry.userContext(member, 'phone', signal)).toEqual([])
     expect(calls).toEqual(['first:member:voice'])
   })
+
+  it('T11: allowedTools asks the packs with a hook and a tool on the channel; a set keeps only those of its tools, null and a throw leave a pack unrestricted; select, find, refusalReason and anthropicTools apply the result', async () => {
+    const seen = defineTool({
+      name: 'see_things',
+      description: 'See.',
+      input: z.object({}),
+      requiredRoles: ['admin', 'member'],
+      readOnly: true,
+      handler: async () => ({}),
+    })
+    const count = defineTool({
+      name: 'count_things',
+      description: 'Count.',
+      input: z.object({}),
+      requiredRoles: ['admin', 'member'],
+      readOnly: true,
+      handler: async () => ({}),
+    })
+    const calls: string[] = []
+    const gated: ToolPack = {
+      name: 'gated',
+      tools: [seen, count],
+      allowedTools: async (ctx, channel) => {
+        calls.push(`gated:${ctx.role}:${channel}`)
+        return new Set(['see_things', 'not_a_tool_of_this_pack'])
+      },
+    }
+    const open: ToolPack = { name: 'open', tools: [search], allowedTools: async () => null }
+    const plain: ToolPack = { name: 'plain', tools: [audit] }
+    const failing: ToolPack = {
+      name: 'failing',
+      tools: [write],
+      allowedTools: async () => {
+        throw new Error('PGRST301')
+      },
+    }
+    const registry = new ToolRegistry([gated, open, plain, failing], { chat: 'all', voice: ['see_things'] })
+    const ctx = { role: 'admin' as Role, userId: 'u1' } as Parameters<typeof registry.allowedTools>[0]
+    const signal = new AbortController().signal
+
+    const allowed = await registry.allowedTools(ctx, 'chat', signal)
+    expect(allowed).not.toBeNull()
+    // The gated pack's count_things is out; everything of the other packs stays, the failing one included.
+    expect([...allowed!].sort()).toEqual(['audit_things', 'create_thing', 'search_things', 'see_things'])
+    expect(calls).toEqual(['gated:admin:chat'])
+    expect(registry.select(ctx, 'chat', allowed).map((t) => t.name)).toEqual([
+      'audit_things',
+      'create_thing',
+      'search_things',
+      'see_things',
+    ])
+    expect(registry.find(ctx, 'count_things', 'chat', allowed)).toBeUndefined()
+    expect(registry.find(ctx, 'count_things', 'chat')).toBeDefined()
+    expect(registry.refusalReason(ctx, 'count_things', 'chat', allowed)).toBe('not_permitted_for_user')
+    expect(registry.refusalReason(ctx, 'count_things', 'voice', allowed)).toBe('not_permitted_on_channel')
+    expect(registry.refusalReason({ role: 'member' }, 'audit_things', 'chat', allowed)).toBe('not_permitted_for_role')
+    expect(registry.refusalReason(ctx, 'nope', 'chat', allowed)).toBe('unknown_tool')
+    expect(registry.refusalReason(ctx, 'see_things', 'chat', allowed)).toBeNull()
+    // The request's tools follow the restriction and are memoised per restriction.
+    const restricted = registry.anthropicTools(ctx, 'chat', allowed)
+    expect(restricted.map((t) => t.name)).toEqual(['audit_things', 'create_thing', 'search_things', 'see_things'])
+    expect(restricted.at(-1)?.cache_control).toEqual({ type: 'ephemeral' })
+    expect(registry.anthropicTools(ctx, 'chat', new Set(allowed!))).toBe(restricted)
+    expect(registry.anthropicTools(ctx, 'chat').map((t) => t.name)).toContain('count_things')
+    expect(registry.anthropicTools(ctx, 'chat', null)).toBe(registry.anthropicTools(ctx, 'chat'))
+
+    // Nothing of the gated pack on voice for a member: its hook is not asked and the answer is null.
+    calls.length = 0
+    expect(await registry.allowedTools({ ...ctx, role: 'member' }, 'voice', signal)).not.toBeNull()
+    expect(calls).toEqual(['gated:member:voice'])
+    // An empty set hides the pack's tools entirely.
+    const hidden: ToolPack = { name: 'hidden', tools: [seen], allowedTools: async () => new Set() }
+    const r2 = new ToolRegistry([hidden, plain], { chat: 'all' })
+    const none = await r2.allowedTools(ctx, 'chat', signal)
+    expect([...none!]).toEqual(['audit_things'])
+    // No pack with a hook: null, and nothing is filtered.
+    expect(await new ToolRegistry([plain], { chat: 'all' }).allowedTools(ctx, 'chat', signal)).toBeNull()
+  })
+
+  it('T12: a tool with its own inputSchema advertises that schema in strict form; zod still validates at dispatch', () => {
+    const fromManifest = defineTool({
+      name: 'from_manifest',
+      description: 'Built from another system\'s schema.',
+      input: z.object({ query: z.string().min(1), limit: z.int().min(1).max(100).default(20) }),
+      inputSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        properties: {
+          query: { type: 'string', minLength: 1, description: 'Substring to match.' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 20, description: 'Maximum results.' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+      requiredRoles: ['admin', 'member'],
+      readOnly: true,
+      handler: async () => ({}),
+    })
+    const tool = toAnthropicTool(fromManifest)
+    const schema = tool.input_schema as { properties: Record<string, Record<string, unknown>>; required: string[] }
+    expect(tool.strict).toBe(true)
+    expect(schema.required).toEqual(['query'])
+    expect(schema.properties.query!.description).toContain('Substring to match.')
+    expect(schema.properties.limit!.type).toBe('integer')
+    expect(schema.properties.limit!.minimum).toBeUndefined()
+    expect(schema).not.toHaveProperty('$schema')
+    // The definition's own document is not touched.
+    expect(fromManifest.inputSchema).toHaveProperty('$schema')
+    expect(fromManifest.input.safeParse({ query: '' }).success).toBe(false)
+  })
 })

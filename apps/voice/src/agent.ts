@@ -27,7 +27,7 @@ import { createServiceClient } from '@va/db'
 import { AssistantAgent, GateAgent } from './assistant-llm.js'
 import { CallIdentity } from './call.js'
 import { LOG_TAG, type VoiceDeps } from './config.js'
-import { parseVoiceEnv } from './env.js'
+import { landmarkConfig, parseVoiceEnv } from './env.js'
 import { GREETING_HR } from './greeting.js'
 import { acceptDispatchedJob, callTokenOf, phoneJobOf } from './job.js'
 import { HangUp, NO_SPEECH, participantLeft, sessionErrorAction } from './lifecycle.js'
@@ -55,7 +55,7 @@ const deps: VoiceDeps = {
     apiKey: env.ANTHROPIC_API_KEY,
     ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}),
   }),
-  registry: createRegistry(createVoiceTokenStore(env, () => new Date())),
+  registry: createRegistry(createVoiceTokenStore(env, () => new Date()), landmarkConfig(env)),
   channel: 'voice',
   settings: {
     ...channelSettings('voice', {
@@ -207,7 +207,7 @@ export default defineAgent<UserData>({
     const t0 = Date.now()
     void identity
       .ctx()
-      .then(async (auth) => warm(callDeps, auth, await call.userContextFor(auth)))
+      .then(async (auth) => warm(callDeps, auth, await call.userContextFor(auth), await call.allowedToolsFor(auth)))
       .then((r) => metrics.write('warm.jsonl', { room, ...r }))
       .catch((err: unknown) => {
         log('warn', LOG_TAG, 'warm failed', {

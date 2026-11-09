@@ -1,0 +1,24 @@
+{
+  "name": "@va/tools-landmark",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The company pack: Landmark's curated data tools through its assistant-api, as the mapped Landmark user (Part 14)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test": "./test/fake-landmark.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit false",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "manifest:pull": "node --import tsx scripts/pull-manifest.ts"
+  },
+  "dependencies": {
+    "@va/core": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

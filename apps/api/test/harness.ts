@@ -95,7 +95,7 @@ export function buildApp(overrides: Partial<AppDeps> = {}) {
       : createMicrosoft(env, () => new Date(), microsoftFake.fetch)
   return createApp({
     anthropic: anthropicClient(),
-    registry: createRegistry(microsoft?.tokens ?? null, { graphFetch: graphFake.fetch, refStart: 1 }),
+    registry: createRegistry(microsoft?.tokens ?? null, null, { graphFetch: graphFake.fetch, refStart: 1 }),
     env,
     livekit,
     microsoft,
