@@ -19,6 +19,7 @@ Copy `0000-template.md` for a new entry. The first eight were taken in the plan
 | [0009](./0009-manual-loop-not-tool-runner.md)                  | The manual Messages loop, not the SDK Tool Runner                                     |
 | [0010](./0010-engine-as-llm-node.md)                           | The engine as the agent's `llmNode`, not a loopback shim                              |
 | [0011](./0011-voice-history-is-the-calls-own-rows.md)          | The voice history is the call's own rows, not LiveKit's text                          |
+| [0017](./0017-google-cloud-vm.md)                              | The API and the worker on a Google Compute Engine VM in Frankfurt, not Hetzner        |
 | [0016](./0016-microsoft-365-mail-and-token-storage.md)         | Outlook through a separate Entra app, delegated only, tokens sealed in our database   |
 | [0015](./0015-writes-only-with-an-unforgeable-confirmation.md) | A write runs only after a confirmation the model cannot forge                         |
 | [0014](./0014-caller-identity-and-the-calls-jwt.md)            | Phone caller identity: enrolled number + keypad PIN; the call's JWT from a magic link |

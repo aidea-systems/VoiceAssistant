@@ -5,8 +5,14 @@
 # The native pieces (onnxruntime-node for Silero, @livekit/rtc-node) are prebuilt for linux-x64;
 # their build scripts are allowed through `pnpm.onlyBuiltDependencies` in the root package.json.
 # The worker is an outbound WebSocket client of LiveKit Cloud: no port is exposed.
+# `ca-certificates` is not in node:24-slim; Node's own fetch and WebSocket carry their roots, but
+# @livekit/rtc-node's Rust engine reads the system store and otherwise fails every room join with
+# "no native root CA certificates found" (seen on the first deploy, 2026-11-06).
 FROM node:24-slim AS base
-RUN corepack enable
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
 WORKDIR /app
 
 FROM base AS deps

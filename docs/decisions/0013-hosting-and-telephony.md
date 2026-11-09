@@ -9,7 +9,8 @@ Part 11 needs and the PIN policy for the pilot.
 
 ## Decision
 
-- **API and voice worker:** one Hetzner Cloud VM in Falkenstein running Docker, the api container
+- **API and voice worker:** one Hetzner Cloud VM in Falkenstein (replaced by a Google Compute
+  Engine VM in Frankfurt on 2026-11-06, decision 0017; the rest of this page stands) running Docker, the api container
   behind Caddy for HTTPS and SSE, the voice container next to it (outbound only). Alternatives:
   Fly.io Frankfurt (no VM to patch, Fly-specific config); LiveKit Cloud agent hosting for the
   worker (logs and keys at LiveKit); Render Frankfurt (least control over the proxy in front of SSE).
