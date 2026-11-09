@@ -1,10 +1,26 @@
 # Backlog — voice
 
-Ids: VOICE-20 (next free)
+Ids: VOICE-21 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
 ## Open
+
+### VOICE-20 · Low · The early filler answers a greeting with "Samo trenutak."
+
+- **Check:** Heard on the first hosted call after PR #42 (2026-11-09)
+- **Where:** `SpokenTextSink` arms the early filler after `FILLER_AFTER_MS` (700 ms) of model
+  silence on every turn; `apps/voice/src/agent.ts` has the phone gate end on "Izvolite", so many
+  callers open with a greeting
+- **What happens:** the model's first token takes 1.2–2.0 s live, so a caller who says "Dobar
+  dan" hears "Samo trenutak." and then the greeting back; it sounds like the assistant has to
+  look something up to say hello. Raising the threshold does not help: no answer arrives under
+  1.2 s. Catalogue questions sound right
+- **Fix direction:** one of, measured with `/bench-voice` and a live call: skip the early filler
+  when the transcript is very short (a greeting or a yes/no, about three words), so small talk
+  waits the 1.3 s in silence; or let the gate's last line and `GREETING_HR` invite a question
+  outright so fewer callers greet first; or a first-turn filler that works as an answer to a
+  greeting. Native review of the fillers (`EARLY_FILLERS_HR`) in the same change
 
 ### VOICE-16 · Low · Unknown numbers have no attempt counter, so a scan of the phone number is invisible
 
