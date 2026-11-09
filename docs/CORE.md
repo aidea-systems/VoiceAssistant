@@ -226,7 +226,12 @@ the loop in-process and hands `say` to the TTS adapter.
   or the **lookup filler** (`Samo trenutak, provjeravam.` and two variants) when the first tool
   call starts first. A tool call after the early filler speaks no second one (S17b). Measured
   2026-11-09: the model's first event comes 1.0–1.5 s after the call, so without the early filler
-  the caller's first sound was 2.3–2.6 s after the end of speech.
+  the caller's first sound was 2.3–2.6 s after the end of speech. A short courtesy turn gets no
+  early filler (`VOICE-20`): `isCourtesy(text)` is true for at most `COURTESY_MAX_WORDS` (4)
+  words containing a phrase from `COURTESY_HR` (greetings, thanks, goodbye), matched as whole
+  words after lower-casing and stripping punctuation, and the owner then passes
+  `fillerAfterMs: 0` (S18; the voice turn does). "Dobar dan, kako ste?" waits for its answer in
+  silence; "Dobar dan, koliko košta stol?" is five words and keeps the filler.
 - `textBlock` is spoken only when its text was not already streamed as deltas: the loop's own
   messages (iteration cap, truncation) reach the caller, the model's answer is not repeated.
 - `toolCall` and `toolResult` are no-ops: nothing about tools is spoken.

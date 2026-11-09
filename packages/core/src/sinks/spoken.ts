@@ -13,7 +13,8 @@
 //     `fillerAfterMs` (a short neutral one, so the caller hears something inside the first-sound
 //     budget whether a lookup or a direct answer follows) or when the first tool call starts
 //     (the lookup filler), whichever comes first; one filler per request, followed by a
-//     paragraph break so the TTS speaks it at once;
+//     paragraph break so the TTS speaks it at once. The owner passes `fillerAfterMs: 0` for a
+//     short courtesy turn (`isCourtesy`, VOICE-20): a greeting waits for its answer in silence;
 //   - textBlock repeats text already streamed as deltas, so it is spoken only when it was not
 //     (the loop's own messages: the iteration cap, truncation);
 //   - toolCall and toolResult are not spoken; a confirm (a write waiting for the caller's yes)
@@ -40,6 +41,46 @@ export const FILLERS_HR: readonly string[] = [
 /** Spoken when the model has produced nothing for `fillerAfterMs`: neutral, because at that
  * point it is not known whether a lookup or a direct answer follows. <!-- needs native review --> */
 export const EARLY_FILLERS_HR: readonly string[] = ['Samo trenutak.', 'Trenutak, molim.']
+
+/** Courtesy phrases: a turn of at most `COURTESY_MAX_WORDS` words that contains one is a
+ * greeting, thanks or goodbye, and gets no early filler ("Samo trenutak." before "Dobar dan"
+ * sounds like a lookup, VOICE-20). Matched after lower-casing and stripping punctuation, as
+ * whole words. <!-- needs native review --> */
+export const COURTESY_HR: readonly string[] = [
+  'dobar dan',
+  'dobro jutro',
+  'dobra večer',
+  'dobar večer',
+  'laku noć',
+  'bok',
+  'halo',
+  'zdravo',
+  'pozdrav',
+  'hvala',
+  'doviđenja',
+  'dovidjenja',
+  'ugodan dan',
+]
+
+/** The longest turn that still counts as courtesy: "Dobar dan, kako ste?" is four words;
+ * "Dobar dan, koliko košta stol?" is five and is a question, so it keeps the filler. */
+export const COURTESY_MAX_WORDS = 4
+
+/**
+ * Whether a caller's turn is a short courtesy (a greeting, thanks or goodbye) that should wait
+ * for its answer in silence rather than hear the early filler. Pure; a table test pins it.
+ */
+export function isCourtesy(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+  if (words.length === 0 || words.length > COURTESY_MAX_WORDS) return false
+  const padded = ` ${words.join(' ')} `
+  return COURTESY_HR.some((phrase) => padded.includes(` ${phrase} `))
+}
 
 export type SpokenEnd = 'done' | 'error'
 

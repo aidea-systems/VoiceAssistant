@@ -27,6 +27,7 @@ import {
   anthropic,
   ask,
   db,
+  EARLY_FILLER,
   FILLER,
   FLUSH,
   logs,
@@ -472,6 +473,23 @@ describe('a spoken turn', () => {
       expect(fields.outcome).toBe('cancelled')
       // The default hold is 200 ms (`HOLD_MS`); a setting that reached the sink speaks well before it.
       expect(fields.first_text_ms).toBeLessThan(100)
+    },
+  )
+
+  scenario(
+    'VOICE-20 a short courtesy turn (a greeting) waits for the answer in silence: no early filler; a question of the same length still hears it',
+    async () => {
+      // The model stays silent past the filler threshold on both turns and the request times
+      // out: what is spoken before the timeout message is exactly the filler decision.
+      anthropic.script({ hangUntilAborted: true }, { hangUntilAborted: true })
+      const call = await openCall({ settings: { fillerAfterMs: 20, requestTimeoutMs: 80 } })
+      const greeting = await (await ask(call, 'Dobar dan, kako ste?')).done
+      expect(greeting.text).toBe(MESSAGES_HR.request_timeout)
+      expect(greeting.text).not.toContain(EARLY_FILLER)
+      const question = await (await ask(call, 'Koliko košta radni stol?')).done
+      expect(question.chunks[0]).toBe(EARLY_FILLER)
+      expect(question.paragraphs).toEqual([EARLY_FILLER, MESSAGES_HR.request_timeout])
+      await call.session.settle()
     },
   )
 

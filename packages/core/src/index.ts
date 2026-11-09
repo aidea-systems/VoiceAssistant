@@ -48,7 +48,16 @@ export type { ModelExtra, ModelProfile } from './model.js'
 export { buildStaticSystemPrompt, buildUserContext, dateLine, DOMAIN_RULES_HR } from './prompts/index.js'
 export { BufferedSink } from './sinks/buffered.js'
 export { speakable } from './sinks/speakable.js'
-export { EARLY_FILLERS_HR, FILLER_AFTER_MS, FILLERS_HR, HOLD_MS, SpokenTextSink } from './sinks/spoken.js'
+export {
+  COURTESY_HR,
+  COURTESY_MAX_WORDS,
+  EARLY_FILLERS_HR,
+  FILLER_AFTER_MS,
+  FILLERS_HR,
+  HOLD_MS,
+  isCourtesy,
+  SpokenTextSink,
+} from './sinks/spoken.js'
 export type { SpokenEnd, SpokenSinkOptions } from './sinks/spoken.js'
 export { defineTool } from './tools/define.js'
 export type { ToolDefinition, ToolHandlerExtras, ToolPack } from './tools/define.js'

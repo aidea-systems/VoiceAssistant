@@ -1,12 +1,19 @@
 // S: the spoken-text sink. Landmark's sink.test.ts cases (S01–S07) plus the plan's additions
 // (S08–S10), the end-of-stream contract (S11–S12), the hold timer (S13–S14), the write preview
-// (S15–S16) and the early filler (S17). Assertions are on what `say` received.
+// (S15–S16), the early filler (S17) and the courtesy rule (S18). Assertions are on what `say` received.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MESSAGES_HR } from '../errors.js'
 import { logs, reset } from '../test/harness.js'
 import { speakable } from './speakable.js'
-import { FILLER_AFTER_MS, HOLD_MS, SpokenTextSink, type SpokenEnd, type SpokenSinkOptions } from './spoken.js'
+import {
+  FILLER_AFTER_MS,
+  HOLD_MS,
+  isCourtesy,
+  SpokenTextSink,
+  type SpokenEnd,
+  type SpokenSinkOptions,
+} from './spoken.js'
 
 const USAGE = { input_tokens: 0, output_tokens: 0 }
 
@@ -422,5 +429,29 @@ describe('SpokenTextSink early filler', () => {
     expect(line?.level).toBe('warn')
     expect(line?.line).toContain('"reason":"Error: tts gone"')
     expect(line?.line).not.toContain(EARLY)
+  })
+})
+
+describe('isCourtesy (VOICE-20)', () => {
+  it.each([
+    ['Dobar dan.', true],
+    ['Dobar dan, kako ste?', true],
+    ['DOBAR DAN', true],
+    ['Halo?', true],
+    ['Bok!', true],
+    ['Hvala.', true],
+    ['Hvala, doviđenja.', true],
+    ['Dovidjenja', true],
+    ['Laku noć i hvala.', true],
+    ['Dobar dan, koliko košta stol?', false],
+    ['Koliko košta stol?', false],
+    ['Koje stolove imate?', false],
+    ['Da.', false],
+    ['Ne, hvala, radije onaj drugi stol.', false],
+    ['Pozdravite kolegu.', false],
+    ['', false],
+    ['   ', false],
+  ])('S18: %j → %s', (text, expected) => {
+    expect(isCourtesy(text)).toBe(expected)
   })
 })
