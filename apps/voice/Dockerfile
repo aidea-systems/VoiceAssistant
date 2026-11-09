@@ -8,7 +8,7 @@
 # `ca-certificates` is not in node:24-slim; Node's own fetch and WebSocket carry their roots, but
 # @livekit/rtc-node's Rust engine reads the system store and otherwise fails every room join with
 # "no native root CA certificates found" (seen on the first deploy, 2026-11-06).
-FROM node:24-slim AS base
+FROM node:25-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
