@@ -3,7 +3,7 @@
 # workspace packages. The workspace packages export their TypeScript sources (`src/index.ts`),
 # so the runtime image runs through tsx rather than a tsc build of the api alone; see
 # docs/API.md → Running and docs/backlog/ops.md OPS-1.
-FROM node:24-slim AS base
+FROM node:25-slim AS base
 RUN corepack enable
 WORKDIR /app
 
