@@ -46,6 +46,18 @@ describe('prompts', () => {
     expect(member.split('\n')).toHaveLength(2)
   })
 
+  it("P04b: the packs' per-user blocks follow the user block as paragraphs, in order; empty ones are dropped", () => {
+    const base = buildUserContext({ email: 'ana@va.test', role: 'admin' })
+    expect(buildUserContext({ email: 'ana@va.test', role: 'admin' }, [])).toBe(base)
+    expect(
+      buildUserContext({ email: 'ana@va.test', role: 'admin' }, [
+        '## Katalog\nTri artikla.',
+        '',
+        '## Drugo\nx',
+      ]),
+    ).toBe(`${base}\n\n## Katalog\nTri artikla.\n\n## Drugo\nx`)
+  })
+
   it('P05: pack rules follow the core rules in pack order, before the presentation; none changes nothing', () => {
     const packRules = ['## Prvi paket\n- pravilo', '## Drugi paket\n- pravilo']
     expect(buildStaticSystemPrompt('voice', packRules)).toBe(

@@ -18,7 +18,9 @@ The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
 - **Fix direction:** the description says the tool cannot list the catalogue and that an empty
   result is the answer, not a reason to try another substring; `query` gets `.min(2)`; the
   prompt rule for tool misses (`.claude/rules/prompts.md`) says one retry at most. A scenario
-  test through the loop asserts a single `search_items` call for an empty table
+  test through the loop asserts a single `search_items` call for an empty table. On the spoken
+  channels the demo pack's per-user block says outright when the catalogue is empty
+  (`catalogue-context.ts`, 2026-11-09), so the probing is left on chat only
 
 ### CORE-13 · Low · OQ: text a sender hides with HTML styling reaches the model
 

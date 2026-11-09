@@ -189,4 +189,86 @@ describe('ToolRegistry', () => {
     expect(new ToolRegistry([a, none, empty, b], {}).domainRules()).toEqual(['## A', '## B'])
     expect(new ToolRegistry([], {}).domainRules()).toEqual([])
   })
+
+  it('T10: userContext asks only the packs with a hook and a tool on the channel, as the user, in pack order; a failing pack is logged and skipped', async () => {
+    const calls: string[] = []
+    const seen = defineTool({
+      name: 'see_things',
+      description: 'See.',
+      input: z.object({}),
+      requiredRoles: ['admin', 'member'],
+      readOnly: true,
+      handler: async () => ({}),
+    })
+    const hidden = defineTool({
+      name: 'hide_things',
+      description: 'Hide.',
+      input: z.object({}),
+      requiredRoles: ['admin'],
+      readOnly: true,
+      handler: async () => ({}),
+    })
+    const first: ToolPack = {
+      name: 'first',
+      tools: [seen],
+      userContext: async (ctx, channel) => {
+        calls.push(`first:${ctx.role}:${channel}`)
+        return '## Prvi\nnešto'
+      },
+    }
+    const adminOnly: ToolPack = {
+      name: 'admin-only',
+      tools: [hidden],
+      userContext: async () => {
+        calls.push('admin-only')
+        return '## Skriveno'
+      },
+    }
+    const silent: ToolPack = { name: 'silent', tools: [search] }
+    const empty: ToolPack = { name: 'empty', tools: [audit], userContext: async () => null }
+    const failing: ToolPack = {
+      name: 'failing',
+      tools: [
+        defineTool({
+          name: 'fail_things',
+          description: 'Fail.',
+          input: z.object({}),
+          requiredRoles: ['admin', 'member'],
+          readOnly: true,
+          handler: async () => ({}),
+        }),
+      ],
+      userContext: async () => {
+        throw new Error('db down: secret row text')
+      },
+    }
+    const registry = new ToolRegistry([failing, first, adminOnly, silent, empty], {
+      voice: ['fail_things', 'see_things', 'hide_things', 'search_things'],
+      chat: 'all',
+    })
+    const signal = new AbortController().signal
+    const member = { role: 'member' } as Parameters<typeof registry.userContext>[0]
+    const warned: string[] = []
+    const warn = console.warn
+    console.warn = (line: string) => {
+      warned.push(line)
+    }
+    try {
+      expect(await registry.userContext(member, 'voice', signal)).toEqual(['## Prvi\nnešto'])
+    } finally {
+      console.warn = warn
+    }
+    // The admin-only pack has no tool a member sees on voice; the silent pack has no hook; the
+    // empty pack's null is dropped; the failing pack is logged by name and nothing else.
+    expect(calls).toEqual(['first:member:voice'])
+    expect(warned).toHaveLength(1)
+    expect(warned[0]).toContain('"user context failed"')
+    expect(warned[0]).toContain('"pack":"failing"')
+    expect(warned[0]).toContain('db down')
+    expect(warned[0]).not.toContain('Prvi')
+
+    // No tool of any pack on the phone: nobody is asked.
+    expect(await registry.userContext(member, 'phone', signal)).toEqual([])
+    expect(calls).toEqual(['first:member:voice'])
+  })
 })

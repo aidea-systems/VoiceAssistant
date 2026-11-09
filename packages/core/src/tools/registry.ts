@@ -4,6 +4,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 
 import type { AuthContext } from '../auth.js'
 import type { Channel } from '../channel.js'
+import { errorReason, log } from '../log.js'
 import type { ToolDefinition, ToolPack } from './define.js'
 import { toAnthropicTool } from './schema.js'
 
@@ -23,8 +24,10 @@ export class ToolRegistry {
   private readonly allowlist: ChannelAllowlist
   private readonly advertised = new Map<string, Anthropic.Tool[]>()
   private readonly rules: readonly string[]
+  private readonly packs: readonly ToolPack[]
 
   constructor(packs: readonly ToolPack[], allowlist: ChannelAllowlist) {
+    this.packs = packs
     this.rules = packs.map((p) => p.domainRules).filter((r): r is string => r !== undefined && r !== '')
     for (const pack of packs) {
       for (const tool of pack.tools) {
@@ -40,6 +43,34 @@ export class ToolRegistry {
    * Fixed for the registry's life, so the prompt stays byte-identical per channel. */
   domainRules(): readonly string[] {
     return this.rules
+  }
+
+  /**
+   * The packs' per-user context blocks for this caller on this channel, in pack order: each
+   * pack with a `userContext` hook and at least one tool advertised to this role on this
+   * channel is asked, as the user. A pack that throws is logged (`user context failed`, the
+   * pack's name, no content) and skipped, so one failing hint never costs the others or the
+   * turn. The owner puts the blocks after `buildUserContext` and bounds the whole read with a
+   * deadline through `signal`.
+   */
+  async userContext(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<readonly string[]> {
+    const advertised = new Set(this.select(ctx, channel).map((t) => t.name))
+    const asked = this.packs.filter((p) => p.userContext && p.tools.some((t) => advertised.has(t.name)))
+    const results = await Promise.allSettled(asked.map((p) => p.userContext!(ctx, channel, signal)))
+    const blocks: string[] = []
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        if (r.value) blocks.push(r.value)
+        return
+      }
+      log('warn', '[core]', 'user context failed', {
+        pack: asked[i]!.name,
+        channel,
+        user_id: ctx.userId,
+        reason: errorReason(r.reason),
+      })
+    })
+    return blocks
   }
 
   /** Every registered tool, sorted by name. */

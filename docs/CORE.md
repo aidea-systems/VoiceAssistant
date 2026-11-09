@@ -201,13 +201,16 @@ voice worker's call state).
 
 ### SpokenTextSink
 
-`new SpokenTextSink(say, end, pickFiller?, holdMs?)` turns the loop's events into sentences for
+`new SpokenTextSink(say, end, options?)` turns the loop's events into sentences for
 text-to-speech and nothing else: `say(text)` receives what to speak, `end('done' | 'error')` is
-called once after `done` or `error`, `pickFiller` picks the filler sentence (random from
-`FILLERS_HR` by default; tests pin one), `holdMs` is how long a finished first sentence waits
-for the next token: the owner passes its channel settings' `holdMs` (the voice worker does,
-`W21`), `HOLD_MS` (200, the voice default) stands in when it does not. Landmark's `OpenAiChunkSink` without its wire
-format: the voice worker runs the loop in-process and hands `say` to the TTS adapter.
+called once after `done` or `error`. The options: `pickFiller` picks the lookup filler (random
+from `FILLERS_HR` by default; tests pin one), `pickEarlyFiller` the early one (`EARLY_FILLERS_HR`),
+`holdMs` is how long a finished first sentence waits for the next token, `fillerAfterMs` how
+long the model may stay silent before the early filler (0 disables it), `onConfirm` receives a
+write's preview. The owner passes its channel settings' `holdMs` and `fillerAfterMs` (the voice
+worker does, `W21`); `HOLD_MS` (200) and `FILLER_AFTER_MS` (700, the voice defaults) stand in
+when it does not. Landmark's `OpenAiChunkSink` without its wire format: the voice worker runs
+the loop in-process and hands `say` to the TTS adapter.
 
 - `textDelta` is spoken a word at a time, up to the last whitespace, so an abbreviation is never
   split across two chunks before `speakable()` sees it. The first sentence of every stretch of
@@ -216,9 +219,14 @@ format: the voice worker runs the loop in-process and hands `say` to the TTS ada
   sentence that nothing follows within `holdMs` is spoken anyway (`VOICE-8`, S13): a
   one-sentence answer does not wait for the end of the generation; a lookup the model announces
   and then thinks about for longer than the hold is spoken before the filler (S13c).
-- `toolStarting` speaks one filler per request (`Samo trenutak, provjeravam.` and two
-  variants), followed by `\n\n` so the TTS synthesises it at once instead of waiting for more
-  text.
+- One filler per request, followed by `\n\n` so the TTS synthesises it at once instead of
+  waiting for more text: the **early filler** (`Samo trenutak.`, neutral) when the model has
+  produced nothing for `fillerAfterMs` after the sink was built, the clock of the request (S17;
+  the first token, a tool call, a text block, a confirm, `done`, `error` and `abort` disarm it),
+  or the **lookup filler** (`Samo trenutak, provjeravam.` and two variants) when the first tool
+  call starts first. A tool call after the early filler speaks no second one (S17b). Measured
+  2026-11-09: the model's first event comes 1.0–1.5 s after the call, so without the early filler
+  the caller's first sound was 2.3–2.6 s after the end of speech.
 - `textBlock` is spoken only when its text was not already streamed as deltas: the loop's own
   messages (iteration cap, truncation) reach the caller, the model's answer is not repeated.
 - `toolCall` and `toolResult` are no-ops: nothing about tools is spoken.
@@ -229,7 +237,9 @@ format: the voice worker runs the loop in-process and hands `say` to the TTS ada
   (`S14`; the voice turn calls it when its signal fires). A `say` that fails when the hold
   releases on its own is logged (`hold release failed`), never an unhandled rejection (`S14b`).
 - Everything goes through `speakable()`. `spoken` holds the whole spoken text; `firstOutputAt`
-  (`performance.now()`) is when the first text reached `say`, for the worker's timing log.
+  (`performance.now()`) is when the first text reached `say`, a filler included, and
+  `firstAnswerAt` when the first text of the answer itself did (`first_text_ms` and
+  `first_answer_ms` in the worker's timing log: a filler moves the first, never the second).
 
 `speakable(text)` is pure and deterministic: TIC, OIB and IBAN become declined lower-case words
 (`TIC-u` → `ticu`), `EUR` and `€` become `eura`, markdown links and images are reduced to their
@@ -238,16 +248,17 @@ collapse to two. The Croatian strings are marked for native review (`CORE-1`).
 
 ## Channels
 
-| Setting                   | chat                                | voice                               | phone (Part 11)                     |
-| ------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- |
-| model / effort / thinking | Opus 5.5 / medium / adaptive (omit) | Sonnet 5.5 / low / `between_tools`  | as voice (its own copy)             |
-| `max_tokens` / iterations | 8192 / 10                           | 1024 / 4                            | as voice                            |
-| tool / request timeout    | 15 s / 90 s                         | 6 s / 25 s                          | as voice                            |
-| history rows              | 200 (`ai_session_history`)          | 20 (the call's own context)         | as voice                            |
-| compaction                | off (later)                         | off                                 | off                                 |
-| hold (spoken sink)        | 200 ms (no sink holds)              | 200 ms (`holdMs`, `VOICE-8`)        | as voice                            |
-| env overrides             | `AI_CHAT_MODEL`, `AI_CHAT_EFFORT`   | `AI_VOICE_MODEL`, `AI_VOICE_EFFORT` | `AI_PHONE_MODEL`, `AI_PHONE_EFFORT` |
-| static prompt             | `CHAT_*`                            | `VOICE_*`                           | voice's bytes (one cache entry)     |
+| Setting                    | chat                                | voice                               | phone (Part 11)                     |
+| -------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- |
+| model / effort / thinking  | Opus 5.5 / medium / adaptive (omit) | Sonnet 5.5 / low / `between_tools`  | as voice (its own copy)             |
+| `max_tokens` / iterations  | 8192 / 10                           | 1024 / 4                            | as voice                            |
+| tool / request timeout     | 15 s / 90 s                         | 6 s / 25 s                          | as voice                            |
+| history rows               | 200 (`ai_session_history`)          | 20 (the call's own context)         | as voice                            |
+| compaction                 | off (later)                         | off                                 | off                                 |
+| hold (spoken sink)         | 200 ms (no sink holds)              | 200 ms (`holdMs`, `VOICE-8`)        | as voice                            |
+| early filler (spoken sink) | off (`fillerAfterMs` 0)             | 700 ms (`FILLER_AFTER_MS`)          | as voice                            |
+| env overrides              | `AI_CHAT_MODEL`, `AI_CHAT_EFFORT`   | `AI_VOICE_MODEL`, `AI_VOICE_EFFORT` | `AI_PHONE_MODEL`, `AI_PHONE_EFFORT` |
+| static prompt              | `CHAT_*`                            | `VOICE_*`                           | voice's bytes (one cache entry)     |
 
 **Call limits** (`call-limits.ts`, `checkCallLimits`): the spoken channels' budget, counted
 from rows: 20 `ai_sessions` in `voice` or `phone` per user per day, 3 live `voice_calls` rows
@@ -304,10 +315,23 @@ names the rejected field of a bad request; `E37`).
 `buildStaticSystemPrompt(channel, packRules)` = intro + `DOMAIN_RULES_HR` + each registered
 pack's `domainRules` in pack order (`registry.domainRules()`) + presentation, per channel.
 It is byte-identical per channel, pure (no clock, locale or env) and carries the cache
-breakpoint. `buildUserContext(ctx)` is the per-user block (`## Korisnik` with email and role,
-plus a scope sentence for members), sent as a second, uncached system block. The caller appends
+breakpoint. `buildUserContext(ctx, packBlocks?)` is the per-user block (`## Korisnik` with
+email and role, plus a scope sentence for members), followed by the packs' per-user context
+blocks as paragraphs (`P04b`), sent as a second, uncached system block. The caller appends
 `dateLine(now)` (`Danas je …`, Europe/Zagreb; pure, the caller passes the clock) as a third
 uncached block.
+
+**Per-user context from the packs.** A pack may add what the caller is most likely to ask
+about, so the model answers in one round instead of a search round plus an answer round
+(Landmark's tuning step 2): `ToolPack.userContext(ctx, channel, signal)` builds a Croatian
+block as the user (`ctx.userClient`, RLS) or returns `null`; `registry.userContext(ctx, channel,
+signal)` asks every pack that has the hook and at least one tool advertised to that role on that
+channel, in pack order, and logs and skips a pack that throws (`user context failed`, the pack's
+name, no content; `T10`). The voice worker reads it once per call while the greeting plays, with
+a 2 s deadline, sends it in the warm-up and in every turn (`W22`); chat does not use it yet (Opus
+with ten iterations has the room; the hook is there when it wants it). The demo pack's block is
+the catalogue itself (up to 50 items, name, category and price; an empty catalogue is said
+outright so the model does not probe it, `CORE-14`), `D15`.
 
 `DOMAIN_RULES_HR` is one short placeholder rule in the skeleton (rely on tool output; retry a
 search with a shorter stem, then ask). Packs contribute their own rules through the
@@ -346,7 +370,8 @@ defineTool({
 output for that channel through `extras.channel`: on voice no ids or timestamps, at most five
 items, short text (the demo pack's two reads are the pattern).
 
-A pack is `{ name, tools, domainRules? }`. `ToolRegistry(packs, allowlist)` throws on a
+A pack is `{ name, tools, domainRules?, userContext? }` (`userContext`: the per-user block
+above, read as the user once per call). `ToolRegistry(packs, allowlist)` throws on a
 duplicate name and on an allowlist that names an unknown or a write tool.
 `select(ctx, channel)` is role ∩ channel, sorted by name; `find(ctx, name, channel)` resolves a
 name through the same filter (undefined for unknown and forbidden alike; `refusalReason` says

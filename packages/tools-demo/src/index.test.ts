@@ -26,7 +26,15 @@ import {
   USERS,
 } from '@va/core/test'
 
-import { demoPack, createNote, getItem, searchItems } from './index.js'
+import {
+  CATALOGUE_EMPTY_HR,
+  catalogueContext,
+  demoPack,
+  createNote,
+  getItem,
+  MAX_CONTEXT_ITEMS,
+  searchItems,
+} from './index.js'
 
 /** As the apps compose the pack: everything on chat, the two reads on voice. */
 const ALLOWLIST: ChannelAllowlist = { chat: 'all', voice: ['search_items', 'get_item'] }
@@ -365,4 +373,39 @@ describe('@va/tools-demo', () => {
       expect(db.rows('demo_notes')).toHaveLength(0)
     },
   )
+
+  it('D15: the catalogue context reads name, category and price as the user, sorted, one over the cap, and lists every item with the one-round rule', async () => {
+    reset()
+    const ctx = await authAs('member')
+    const block = await catalogueContext(ctx, 'voice', signal)
+    const req = db.requestsTo('demo_items', 'GET').at(-1)!
+    expect(clientOf(req)).toBe('user')
+    expect(req.params.get('select')).toBe('name,category,price')
+    expect(req.params.get('order')).toBe('name.asc')
+    expect(req.params.get('limit')).toBe(String(MAX_CONTEXT_ITEMS + 1))
+    expect(block).toMatch(/^## Katalog\n/)
+    expect(block).toContain(`Katalog ima ${db.rows('demo_items').length} artikala`)
+    expect(block).toContain(`${ITEMS.lamp.name} — ${ITEMS.lamp.category} — ${ITEMS.lamp.price}`)
+    expect(block).toContain('bez alata')
+    expect(block).not.toContain(ITEMS.lamp.id)
+    expect(demoPack.userContext).toBe(catalogueContext)
+  })
+
+  it('D16: an empty catalogue is said outright (CORE-14); one over the cap is not listed; a failing read throws', async () => {
+    reset()
+    const ctx = await authAs('member')
+    db.fault((r) => r.table === 'demo_items', { status: 200, body: [] })
+    expect(await catalogueContext(ctx, 'voice', signal)).toBe(CATALOGUE_EMPTY_HR)
+
+    const many = Array.from({ length: MAX_CONTEXT_ITEMS + 1 }, (_, i) => ({
+      name: `Artikl ${i}`,
+      category: 'x',
+      price: i,
+    }))
+    db.fault((r) => r.table === 'demo_items', { status: 200, body: many })
+    expect(await catalogueContext(ctx, 'voice', signal)).toBeNull()
+
+    db.fault((r) => r.table === 'demo_items', { status: 500 })
+    await expect(catalogueContext(ctx, 'voice', signal)).rejects.toThrow(/catalogue context failed/)
+  })
 })
