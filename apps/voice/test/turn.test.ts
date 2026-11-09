@@ -54,7 +54,9 @@ describe('a spoken turn', () => {
       expect(out.paragraphs).toEqual([FILLER, 'Imamo dva stola. Radni stol košta tristo dvadeset eura.'])
       expect(out.text).not.toContain('\n\n')
 
-      const read = db.requestsTo('demo_items', 'GET')
+      // The tool's own read, the one with the name filter (the call's one catalogue-context
+      // read, W22, selects the same three columns without it).
+      const read = db.requestsTo('demo_items', 'GET').filter((r) => r.params.has('name'))
       expect(read).toHaveLength(1)
       expect(clientOf(read[0]!)).toBe('user')
       expect(read[0]!.headers.get('Authorization')).toBe(`Bearer ${TOKENS.member}`)
@@ -263,7 +265,80 @@ describe('a spoken turn', () => {
     expect(times).toEqual([...times].sort((a, b) => a - b))
     const total = Number(/"total_ms":(\d+)/.exec(timing!.line)![1])
     expect(times.at(-1)!).toBeLessThanOrEqual(total)
+    // The answer itself, after the filler: the figure a filler cannot move.
+    const firstText = Number(/"first_text_ms":(\d+)/.exec(timing!.line)![1])
+    const firstAnswer = Number(/"first_answer_ms":(\d+)/.exec(timing!.line)![1])
+    expect(firstAnswer).toBeGreaterThanOrEqual(firstText)
+    expect(firstAnswer).toBeLessThanOrEqual(total)
   })
+
+  scenario(
+    'W22 the catalogue is in the uncached user block, read once per call as the caller, so a price question needs no tool round',
+    async () => {
+      anthropic.script(answer('Stolna lampa košta četrdeset devet eura i devedeset centi.'), answer('Da.'))
+      const call = await openCall()
+      const out = await (await ask(call, 'Koliko košta stolna lampa?')).done
+      expect(out.text).toBe('Stolna lampa košta četrdeset devet eura i devedeset centi.')
+      await (
+        await ask(call, 'Hvala.')
+      ).done
+      await call.session.settle()
+
+      const contextReads = db
+        .requestsTo('demo_items', 'GET')
+        .filter((r) => r.params.get('select') === 'name,category,price' && !r.params.has('name'))
+      expect(contextReads).toHaveLength(1)
+      expect(clientOf(contextReads[0]!)).toBe('user')
+      expect(contextReads[0]!.headers.get('Authorization')).toBe(`Bearer ${TOKENS.member}`)
+
+      for (const c of anthropic.calls) {
+        const system = c.body.system as Array<{ text: string; cache_control?: unknown }>
+        expect(system[0]!.cache_control).toEqual({ type: 'ephemeral' })
+        expect(system[0]!.text).not.toContain('## Katalog')
+        expect(system[1]!.text).toMatch(/^## Korisnik\n/)
+        expect(system[1]!.text).toContain('## Katalog')
+        expect(system[1]!.text).toContain('Stolna lampa')
+        expect(system[1]!.cache_control).toBeUndefined()
+      }
+      const line = logs.find((l) => l.line.includes('"user context"'))
+      expect(line?.line).toMatch(/"blocks":1,"chars":\d+/)
+      expect(line?.line).not.toContain('Stolna lampa')
+    },
+  )
+
+  scenario(
+    'W22b a failing catalogue read is logged by pack and the turn is answered without the block',
+    async () => {
+      anthropic.script(answer('Ne znam.'))
+      db.fault((r) => r.table === 'demo_items' && r.params.get('select') === 'name,category,price', {
+        status: 500,
+      })
+      const call = await openCall()
+      const out = await (await ask(call, 'Koliko košta stolna lampa?')).done
+      expect(out.text).toBe('Ne znam.')
+      const system = anthropic.calls[0]!.body.system as Array<{ text: string }>
+      expect(system[1]!.text).not.toContain('## Katalog')
+      const failed = logs.find((l) => l.line.includes('"user context failed"'))
+      expect(failed?.level).toBe('warn')
+      expect(failed?.line).toContain('"pack":"demo"')
+    },
+  )
+
+  scenario(
+    'W22c a hung catalogue read hits its deadline and the turn goes on without the block',
+    async () => {
+      anthropic.script(answer('Evo.'))
+      db.fault((r) => r.table === 'demo_items' && r.params.get('select') === 'name,category,price', {
+        hang: true,
+      })
+      const call = await openCall({ userContextTimeoutMs: 50 })
+      const out = await (await ask(call, 'Koliko košta stolna lampa?')).done
+      expect(out.text).toBe('Evo.')
+      const system = anthropic.calls[0]!.body.system as Array<{ text: string }>
+      expect(system[1]!.text).not.toContain('## Katalog')
+      expect(logs.some((l) => l.line.includes('"user context timeout"'))).toBe(true)
+    },
+  )
 
   scenario('W11 a model error is spoken and the stream ends; only the user row is written', async () => {
     anthropic.script({ error: { status: 500, type: 'api_error', message: 'boom' } })

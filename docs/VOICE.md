@@ -17,7 +17,8 @@ browser (call button) ──POST /voice/sessions──▶ apps/api ── ai_ses
                                      ├─ VAD  Silero (barge-in), or Soniox's first interim words (INTERRUPT_ON)
                                      ├─ LLM  AssistantAgent.llmNode → @va/core runOrchestrationLoop + SpokenTextSink, in-process
                                      │        tools run as the caller (RLS); rows written after the answer; warm-up on dispatch
-                                     └─ TTS  ElevenLabs eleven_v4_turbo, Karlo; a flush after the filler so it is heard at once
+                                     └─ TTS  ElevenLabs eleven_v4_turbo, Karlo; a flush after the filler (after 700 ms of model
+                                              silence, or on the first tool call) so it is heard at once
 ```
 
 ## Layout
@@ -176,6 +177,7 @@ Landmark's measured defaults; change one only with a measurement (`/bench-voice`
 | `VAD_THRESHOLD`          | 0.3                    | Silero activation threshold (its own is 0.5). Also fires on breath: 2 of 40 tries stopped the agent 0.22 s before the first word                 |
 | `VAD_MIN_SPEECH_MS`      | 30                     | Silero minimum speech (its own is 50)                                                                                                            |
 | `IDENTITY_CACHE_MS`      | 60000                  | Per-call identity re-read interval; the schema caps it at a minute (invariant 7)                                                                 |
+| `FILLER_AFTER_MS`        | 700                    | Model silence before the early filler ("Samo trenutak."); 0 keeps the filler to the first tool call. Measured 2026-11-09 (below)                 |
 | `PHONE_PIN_ROLES`        | `admin,member`         | Roles that must enter a keypad PIN on the phone channel: every role during the pilot (decision 0013)                                             |
 | `PHONE_PIN_TIMEOUT_MS`   | 10000                  | The keypad wait before the one re-prompt, then the refusal (Part 11b)                                                                            |
 | `PHONE_PIN_MAX_FAILURES` | 3                      | Wrong PINs in a row that lock the number                                                                                                         |
@@ -351,12 +353,14 @@ The writer refuses an entry with a `text`, `transcript`, `heard` or `said` key (
 **`llm-bench.ts`** times the engine in-process, no speech in the way, as a real user of the
 configured Supabase project: `bench/questions.hr.txt` (ten product-neutral questions the demo
 pack answers, plus two small-talk lines) × N repeats, each on a fresh single-turn conversation,
-through the same `runVoiceTurn` as the worker. It opens a voice session of its own and deletes
-it at the end. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
+through the same `runVoiceTurn` as the worker, with the packs' per-user context read once as
+the worker reads it per call. It opens a voice session of its own and deletes it at the end.
+`first` is the first spoken text, the early filler included once `FILLER_AFTER_MS` is on;
+`answer` is the first text of the answer itself, the figure a filler cannot move. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
 `AI_VOICE_MODEL` / `AI_VOICE_EFFORT` to compare models; `LABEL` tags the rows.
 
 ```
-pnpm --filter @va/voice bench 3            # p50/p95 first text and whole answer, per-question median with min–max, rounds, breaks, cache hits
+pnpm --filter @va/voice bench 3            # p50/p95 first text (filler included), first answer and whole answer, per-question median with min–max, rounds, breaks, cache hits
 pnpm --filter @va/voice bench first warm   # one call's first question after the warm-up (cold-start runs)
 SHOW_ANSWERS=1 pnpm --filter @va/voice bench 1   # prints the answers to the console (never to the log)
 ```

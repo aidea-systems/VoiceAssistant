@@ -52,8 +52,10 @@ export const NOW = Date.parse('2026-10-28T10:00:00.000Z')
 export const ROOM = 'voice-11111111-1111-4111-8111-111111111111'
 export const CALL_TOKEN = 'call-token-for-tests'
 export const SESSION_VOICE = uuid(601)
-/** The filler every scenario pins. */
+/** The lookup filler every scenario pins, and the early one (the fakes answer within
+ * milliseconds, so it is heard only where a scenario makes the model slow). */
 export const FILLER = 'Samo trenutak.'
+export const EARLY_FILLER = 'Trenutak.'
 
 export interface DepsOptions {
   channel?: 'voice' | 'phone'
@@ -140,6 +142,8 @@ export async function openCall(opts: OpenCallOptions = {}): Promise<OpenedCall> 
   const d = deps(opts)
   const session = new CallSession(d, identity, {
     pickFiller: () => FILLER,
+    pickEarlyFiller: () => EARLY_FILLER,
+    ...(opts.userContextTimeoutMs !== undefined ? { userContextTimeoutMs: opts.userContextTimeoutMs } : {}),
     ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
     ...(opts.identityTimeoutMs !== undefined ? { identityTimeoutMs: opts.identityTimeoutMs } : {}),
     ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),
