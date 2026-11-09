@@ -4,7 +4,7 @@
 # browser reads them from the bundle, so one image serves one backend), then served by nginx
 # with the SPA fallback and the caching rules in nginx.conf. HTTPS, which the service worker
 # needs, is the host's job (a load balancer, Caddy, or the static host's own certificate).
-FROM node:24-slim AS build
+FROM node:25-slim AS build
 RUN corepack enable
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc* ./
