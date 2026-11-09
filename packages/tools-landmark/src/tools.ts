@@ -7,11 +7,19 @@ import { z } from 'zod'
 
 import type { LandmarkAccess } from './access.js'
 import type { ManifestTool } from './manifest.js'
+import { MAX_INPUT_CHARS } from './reviewed.js'
 
 type Input = Record<string, unknown>
 
+/** Every string the model sends is at most `MAX_INPUT_CHARS`, whatever the manifest says. */
+function boundedStrings(value: Input): boolean {
+  return Object.values(value).every((v) => typeof v !== 'string' || v.length <= MAX_INPUT_CHARS)
+}
+
 export function landmarkTool(tool: ManifestTool, access: LandmarkAccess): ToolDefinition<Input> {
-  const input = z.fromJSONSchema(tool.input_schema) as unknown as z.ZodType<Input>
+  const input = (z.fromJSONSchema(tool.input_schema) as unknown as z.ZodType<Input>).refine(boundedStrings, {
+    message: `a string field is longer than ${MAX_INPUT_CHARS} characters`,
+  }) as unknown as z.ZodType<Input>
   return defineTool<Input>({
     name: tool.name,
     description: tool.description,
@@ -19,6 +27,7 @@ export function landmarkTool(tool: ManifestTool, access: LandmarkAccess): ToolDe
     inputSchema: tool.input_schema,
     requiredRoles: ['admin', 'member'],
     readOnly: true,
-    handler: (parsed, ctx, extras, signal) => access.call(ctx, tool.name, parsed, extras.channel, signal, extras.requestId),
+    handler: (parsed, ctx, extras, signal) =>
+      access.call(ctx, tool.name, parsed, extras.channel, signal, extras.requestId),
   })
 }

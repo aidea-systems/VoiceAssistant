@@ -7,6 +7,7 @@ import type { ToolPack } from '@va/core'
 
 import { LandmarkAccess } from './access.js'
 import { type LandmarkManifest, MANIFEST } from './manifest.js'
+import { REVIEWED_VOICE_TOOLS } from './reviewed.js'
 import { LANDMARK_RULES_HR } from './rules.hr.js'
 import { landmarkTool } from './tools.js'
 
@@ -24,8 +25,11 @@ export interface LandmarkPackConfig {
 
 /** Every tool of the committed snapshot, in manifest order. */
 export const LANDMARK_TOOLS: readonly string[] = MANIFEST.tools.map((t) => t.name)
-/** The ones Landmark clamps and allows on voice: the app's spoken allowlists name these. */
-export const LANDMARK_VOICE_TOOLS: readonly string[] = MANIFEST.tools.filter((t) => t.voice).map((t) => t.name)
+/** The ones both Landmark allows on voice (the manifest's flag) and this repository reviewed
+ * for the ear (`REVIEWED_VOICE_TOOLS`): the worker names them literally in its allowlist. */
+export const LANDMARK_VOICE_TOOLS: readonly string[] = MANIFEST.tools
+  .filter((t) => t.voice && (REVIEWED_VOICE_TOOLS as readonly string[]).includes(t.name))
+  .map((t) => t.name)
 
 export const LANDMARK_PACK_NAME = 'landmark'
 
@@ -62,9 +66,18 @@ export {
   toLandmarkChannel,
 } from './access.js'
 export { ASSERTION_AUDIENCE, ASSERTION_ISSUER, ASSERTION_TTL_S, signAssertion } from './assertion.js'
+export { clampForVoice, clipText, VOICE_MAX_CHARS, VOICE_MAX_ITEMS } from './clamp.js'
+export {
+  MAX_INPUT_CHARS,
+  MAX_LIMIT,
+  REVIEWED_TOOLS,
+  REVIEWED_VOICE_TOOLS,
+  type ReviewedTool,
+} from './reviewed.js'
 export {
   createLandmarkClient,
   LANDMARK_TAG,
+  MAX_RESPONSE_BYTES,
   type LandmarkChannel,
   type LandmarkClient,
   type LandmarkClientConfig,
@@ -80,6 +93,7 @@ export {
   type ManifestTool,
   manifestVersion,
   parseManifest,
+  schemaProblem,
 } from './manifest.js'
 export { LANDMARK_RULES_HR } from './rules.hr.js'
-export { LandmarkAccessError, SUBJECT_CACHE_MS } from './subject.js'
+export { LandmarkAccessError, subjectOf } from './subject.js'

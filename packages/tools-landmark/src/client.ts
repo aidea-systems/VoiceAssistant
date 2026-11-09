@@ -9,6 +9,10 @@ import { z } from 'zod'
 import { signAssertion } from './assertion.js'
 
 export const LANDMARK_TAG = '[landmark]'
+/** The most the function may answer with; more is `bad_response` (the review's finding 2). */
+export const MAX_RESPONSE_BYTES = 256 * 1024
+/** A code the function sends is logged only in this shape; anything else is `unknown`. */
+const CODE = /^[a-z_]{1,40}$/
 
 /** Landmark's two channels; our `phone` maps to its `voice` (the same clamps). */
 export type LandmarkChannel = 'chat' | 'voice'
@@ -97,13 +101,24 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
         },
         body: JSON.stringify(body),
         signal,
+        // The bearer must not follow a redirect anywhere.
+        redirect: 'error',
       })
     } catch (e) {
       if (signal.aborted) throw e
       log('warn', LANDMARK_TAG, 'request failed', { ...fields, status: 0, ms: ms(t0) })
       throw new LandmarkError('network', 0, null)
     }
-    const text = await res.text()
+    const declared = Number(res.headers.get('content-length') ?? 0)
+    const text = declared > MAX_RESPONSE_BYTES ? null : await res.text()
+    if (text === null || text.length > MAX_RESPONSE_BYTES) {
+      log('warn', LANDMARK_TAG, 'response too large', {
+        ...fields,
+        status: res.status,
+        bytes: text?.length ?? declared,
+      })
+      throw new LandmarkError('bad_response', res.status, null)
+    }
     let json: unknown = null
     try {
       json = text ? JSON.parse(text) : null
@@ -115,7 +130,7 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
       return json
     }
     const envelope = (json as { error?: { code?: unknown; message?: unknown } } | null)?.error
-    const code = typeof envelope?.code === 'string' ? envelope.code : 'unknown'
+    const code = typeof envelope?.code === 'string' && CODE.test(envelope.code) ? envelope.code : 'unknown'
     const detail = typeof envelope?.message === 'string' ? envelope.message : null
     log('warn', LANDMARK_TAG, 'request refused', { ...fields, status: res.status, code, ms: ms(t0) })
     throw new LandmarkError(code, res.status, detail)
