@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { defineTool } from '@va/core'
 
-import { clip, demoClient } from '../demo-db.js'
+import { clip, demoClient, isSpoken } from '../demo-db.js'
 
 export const getItem = defineTool({
   name: 'get_item',
@@ -25,7 +25,7 @@ export const getItem = defineTool({
       .maybeSingle()
     if (error) throw new Error(`get_item failed: ${error.code}`)
     if (!data) return { error: 'item not found' }
-    if (extras.channel === 'voice') {
+    if (isSpoken(extras.channel)) {
       // No id or timestamp to read aloud; the description is clipped for speech.
       return {
         name: data.name,
