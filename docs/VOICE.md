@@ -205,18 +205,33 @@ in-process worker removes the function's cold start (~1.5 s) and the HTTP hop.
 
 ### Measurements
 
-| Date       | Commit    | What changed                                             | Model                      | First text p50 / p95 | Whole answer p50 / p95 | Rounds | n   |
-| ---------- | --------- | -------------------------------------------------------- | -------------------------- | -------------------- | ---------------------- | ------ | --- |
-| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                  | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s      | 5.94 s / 9.37 s        | 2.69   | 36  |
-| 2026-10-29 | `e57f31c` | demo tables seeded                                       | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s      | 4.22 s / 9.08 s        | 2.08   | 36  |
-| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)            | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s      | 4.33 s / 8.76 s        | 2.06   | 36  |
-| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23) | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s      | 4.18 s / 13.79 s       | 2.03   | 36  |
-| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept) | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s      | 4.02 s / 8.81 s        | 2.06   | 36  |
-| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                     | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s      | 4.09 s / 9.23 s        | 2.03   | 36  |
-| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)      | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s      | 4.70 s / 10.80 s       | 2.03   | 36  |
-| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules         | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s      | 4.34 s / 9.07 s        | 2.03   | 36  |
-| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)   | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s      | 4.84 s / 8.30 s        | 2.08   | 36  |
-| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule         | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s      | 4.50 s / 8.70 s        | 2.08   | 36  |
+| Date       | Commit    | What changed                                             | Model                      | First text p50 / p95                                       | Whole answer p50 / p95 | Rounds | n   |
+| ---------- | --------- | -------------------------------------------------------- | -------------------------- | ---------------------------------------------------------- | ---------------------- | ------ | --- |
+| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                  | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s                                            | 5.94 s / 9.37 s        | 2.69   | 36  |
+| 2026-10-29 | `e57f31c` | demo tables seeded                                       | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s                                            | 4.22 s / 9.08 s        | 2.08   | 36  |
+| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)            | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s                                            | 4.33 s / 8.76 s        | 2.06   | 36  |
+| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23) | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s                                            | 4.18 s / 13.79 s       | 2.03   | 36  |
+| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept) | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s                                            | 4.02 s / 8.81 s        | 2.06   | 36  |
+| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                     | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s                                            | 4.09 s / 9.23 s        | 2.03   | 36  |
+| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)      | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s                                            | 4.70 s / 10.80 s       | 2.03   | 36  |
+| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules         | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s                                            | 4.34 s / 9.07 s        | 2.03   | 36  |
+| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)   | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s                                            | 4.84 s / 8.30 s        | 2.08   | 36  |
+| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule         | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s                                            | 4.50 s / 8.70 s        | 2.08   | 36  |
+| 2026-11-09 | `88025f0` | baseline for the early filler and the catalogue block    | `claude-sonnet-5-5`, `low` | 1.64 s / 2.80 s                                            | 4.09 s / 7.46 s        | 2.06   | 36  |
+| 2026-11-09 | `14ed3ab` | early filler 700 ms + the catalogue in the user block    | `claude-sonnet-5-5`, `low` | 0.70 s / 0.70 s (the filler); first answer 1.49 s / 2.64 s | 1.74 s / 2.77 s        | 1.00   | 36  |
+
+**The early filler and the catalogue block (2026-11-09).** Two levers from Landmark's tuning
+list, measured together on the local stack, three repeats, the nine seeded items. The early
+filler fixes the first sound at `FILLER_AFTER_MS` (0.70 s on every utterance, before the endpoint
+delay and the TTS); the bench therefore reports the first answer text as well, the figure a
+filler cannot move. The catalogue block (540 characters, uncached) turned every catalogue
+question into one model round: first answer p50 1.49 s against a first text of 1.64 s before
+(the same order, now without a tool in front of it), whole answer p50 4.09 → 1.74 s, p95
+7.46 → 2.77 s, rounds 2.06 → 1.00. The block costs about 460 uncached input tokens per call.
+What the bench does not judge is the answers themselves: with the block the model answers from
+the prompt, so a run with `SHOW_ANSWERS=1` is read before this is called done on the live call.
+The paragraph-break count now subtracts the filler's own break whenever a filler was spoken, not
+only on tool answers.
 
 **Part 13b, the mail pack on voice.** Both runs on the local stack with the seed member, three
 repeats each, one shell (`~/.config/va/voice.local.env` sourced after `voice.env`). The bench

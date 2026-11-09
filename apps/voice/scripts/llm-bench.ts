@@ -105,8 +105,9 @@ interface Result {
   rounds: number
   cache_read_first: number
   spoken_len: number
-  /** Paragraph breaks the model wrote into the spoken text (the filler's own break, present on
-   * every tool answer, not counted): each one is a text-to-speech segment seam in the worker. */
+  /** Paragraph breaks the model wrote into the spoken text (the filler's own break, present
+   * whenever a filler was spoken, not counted): each one is a text-to-speech segment seam in the
+   * worker. */
   breaks: number
   outcome: VoiceTurnResult['outcome']
   spoken: string
@@ -146,7 +147,10 @@ async function ask(
     rounds,
     cache_read_first: firstCacheRead,
     spoken_len: result.spoken.length,
-    breaks: Math.max(0, (result.spoken.match(/\n\n/g) ?? []).length - (rounds > 1 ? 1 : 0)),
+    breaks: Math.max(
+      0,
+      (result.spoken.match(/\n\n/g) ?? []).length - (result.firstTextMs !== result.firstAnswerMs ? 1 : 0),
+    ),
     outcome: result.outcome,
     spoken: result.spoken,
   }
