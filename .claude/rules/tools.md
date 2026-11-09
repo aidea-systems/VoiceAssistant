@@ -17,7 +17,11 @@ paths:
   capped (`limit` ≤ 100, default 20). Voice variants cap at 3–5 items and carry no ids.
 - **Reaching voice:** a tool reaches voice only by editing `VOICE_ALLOWLIST` in
   `apps/voice/src/tools.ts` (the app composes the packs; core names no pack's tools), and the
-  diff (commit message or PR) says why its output is safe to read aloud.
+  diff (commit message or PR) says why its output is safe to read aloud. The Landmark pack's
+  twelve join through `voiceAllowlist(true)` when that pack is registered.
+- **A pack that fronts another system's gate** (Landmark's roles) adds `allowedTools(ctx,
+channel, signal)`: the registry applies its answer at advertisement and at dispatch; the pack
+  caches it for at most 60 s per user.
 - **Tests:** every tool ships with a scenario test through the loop using the fakes (seeded
   fixtures), not only a handler unit test. The test asserts the request the handler sent and the
   result the model received.

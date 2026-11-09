@@ -22,6 +22,7 @@ VoiceAssistant/
 │   ├── db/                       # @va/db   — generated Supabase types, client factories, env
 │   ├── integrations/             # @va/integrations — sealed tokens, the Microsoft OAuth, the token store (docs/MAIL.md)
 │   ├── tools-demo/               # @va/tools-demo — one example tool pack (the contract for real packs)
+│   ├── tools-landmark/           # @va/tools-landmark — the company pack: Landmark's twelve read tools through its assistant-api (Part 14)
 │   └── tools-mail/               # @va/tools-mail — the email pack: the Graph client and four reads (13a, 13b); writes in 13c
 ├── apps/
 │   ├── api/                      # @va/api   — Hono: /chat (SSE), /voice/sessions, /integrations, /health; Dockerfile
@@ -45,6 +46,10 @@ web ──HTTP──▶ api ──▶ core ──▶ db
 `@va/integrations` holds what both processes need to act on a user's outside account: the
 sealed tokens, the Microsoft OAuth and `tokenFor`. A pack never imports it; the app builds the
 token store and hands a pack a token function, so `tools-* → core` stays the packs' only edge.
+
+`@va/tools-landmark` reaches Landmark over HTTPS with a 60 s assertion it signs itself from a
+secret the app hands it (decision 0018); it holds no Landmark credential and reads no Landmark
+table. It is registered only where `LANDMARK_API_URL` and `LANDMARK_ASSISTANT_SECRET` are set.
 
 `core` never imports an app, never does HTTP, never imports LiveKit or React. Packages are
 imported through their root (`@va/core`), never through `src/` (ESLint). Inside an app the layers
@@ -123,6 +128,8 @@ Every later part extends this table.
 | Generated types, client factories, env schema                     | `packages/db`                                      | Part 2     |
 | Loop, tool registry, prompts, history, sinks, fakes               | `packages/core`                                    | Part 3     |
 | Example tool pack                                                 | `packages/tools-demo`                              | Part 3     |
+| Email pack (Outlook through Graph) and the token store            | `packages/tools-mail`, `packages/integrations`     | Part 13    |
+| Company pack (Landmark through its `assistant-api`)               | `packages/tools-landmark`                          | Part 14    |
 | HTTP API, SSE, rate limits, voice session endpoints               | `apps/api`                                         | Part 4     |
 | Voice worker, bench scripts                                       | `apps/voice`                                       | Part 5     |
 | PWA                                                               | `apps/web`                                         | Part 6     |

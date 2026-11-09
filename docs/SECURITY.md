@@ -31,16 +31,23 @@ item says so in its description.
       that reads our database; `escapeLike` and `NO_STAR` in `@va/tools-demo` are the pattern
       (`docs/CORE.md` → Tools). The mail tools read Graph with the user's own delegated token,
       only `/me`, never another mailbox; the token comes from `tokenFor` through the service
-      role by `user_id` (`docs/MAIL.md`). Tests: the packs' scenarios (`D`, `Z01`–`Z18`), `B28`,
-      `B29`, `demo_tables.test.sql` (pgTAP).
+      role by `user_id` (`docs/MAIL.md`). The Landmark tools reach Landmark's `assistant-api`
+      with a 60 s assertion signed for the caller's confirmed address, and Landmark reads as that
+      user under its own RLS; input is validated here from the manifest's schema before it
+      leaves, the tool name is checked against `^[a-z][a-z0-9_]*$` before it enters the path
+      (`docs/LANDMARK.md`, decision 0018). Tests: the packs' scenarios (`D`, `Z01`–`Z18`,
+      `L01`–`L12`), `B28`, `B29`, `demo_tables.test.sql` (pgTAP).
 - [ ] **The voice allowlist is read-only or confirmed; dispatch re-applies the gate; speech is
       untrusted input.** `VOICE_ALLOWLIST` (`apps/voice/src/tools.ts`, the only place a tool is
       named for voice) with the assertion at module load that every one is read-only or carries
       `confirmation: 'required'` (decision 0015, `packages/core/src/tools/registry.ts`); a spoken
       write runs only on the caller's yes decided in code, after its preview was read out;
-      `dispatchTool` resolves the name through the same role-and-channel filter and answers an
-      `is_error` result (invariants 4 and 5). Tests: `T02`, `T05`, `T08`, `E08`–`E10`, `W06`,
-      `W20`, `R01`, `E40`–`E51`, `S15`, `S16`, `W35`–`W43`, `Z19`–`Z27`, `B30`.
+      `dispatchTool` resolves the name through the same role-and-channel filter, and through the
+      packs' per-user gate when one is given (Landmark's role from its `/me`, `ToolPack.allowedTools`,
+      `not_permitted_for_user`), and answers an `is_error` result (invariants 4 and 5). Landmark's
+      twelve join the spoken allowlist only where the pack is registered (`voiceAllowlist(true)`).
+      Tests: `T02`, `T05`, `T08`, `T11`, `E08`–`E10`, `E39`, `W06`, `W20`, `W45`–`W47`, `R01`,
+      `LA01`–`LA03`, `L05`–`L07`, `E40`–`E51`, `S15`, `S16`, `W35`–`W43`, `Z19`–`Z27`, `B30`.
 - [ ] **The JWT never leaves our side; LiveKit learns the user id and nothing else.** LiveKit
       job metadata carries only the opaque call token and the session id; the browser gets only
       a LiveKit room token whose participant identity is `users.id` with no name (so no email);
@@ -125,7 +132,9 @@ sending them a sign-in link. That check is only as good as the addresses in Supa
 public sign-up open and email confirmation off, anyone could register a colleague's address
 before the colleague does, so sign-up stays off and users are invited (`REL-14`). The same
 address is what the Landmark pack (Part 14) signs as `sub`, so the same setting protects the
-company's Landmark data. Tokens are
+company's Landmark data; the pack itself signs only for an address GoTrue confirmed on the
+caller's own account, not banned, equal to the profile's (`packages/tools-landmark/src/subject.ts`,
+`L09`), and Landmark maps it to exactly one user of its own or refuses. Tokens are
 AES-256-GCM ciphertext under `INTEGRATIONS_KEY` on the two hosts only; a database dump alone
 opens nothing, but a token and the key together can read and send mail as the user, which is
 why both stay out of logs, responses and the browser. Disconnecting deletes our copy; Microsoft's
@@ -151,6 +160,11 @@ the reason it needs no user filter:
   reads a number, no row.
 - `apps/voice/src/call.ts`, the call lookup: `voice_calls` by the opaque token's SHA-256 (and the
   room) before the user is known; the hash is the credential and the filter.
+- `packages/tools-landmark/src/subject.ts`, the one read a pack makes with the service client:
+  GoTrue's admin lookup of the caller's own auth account (`auth.admin.getUserById(ctx.authUserId)`),
+  to sign the Landmark assertion only for an address GoTrue confirmed on that account and not
+  banned, the same read as the Outlook callback's `ownsMailbox`; the caller's own `auth_user_id`
+  is the filter, cached 60 s, nothing written (decision 0018, `L09`).
 - `packages/core/src/auth.ts`, the profile re-read: `public.users` by `auth_user_id` from GoTrue's
   answer; the identity it establishes is the filter for everything after it.
 - `packages/integrations/src/microsoft/tokens.ts`, the token store (`tokenFor`, in the API and
@@ -222,16 +236,17 @@ user hears or reads is reviewed by a native speaker before release; until then i
 
 What is stored, where, and for how long:
 
-| Data                                                                                                     | Where                                         | Lawful basis / note                                                                                         | Retention                                                                                |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| account: email, role, language                                                                           | Supabase Auth, `public.users`                 | contract (the company's staff)                                                                              | the account's life                                                                       |
-| chat turns: typed text, answers, tool I/O                                                                | `ai_messages`, `ai_sessions`                  | contract; may contain what the user pasted                                                                  | open: proposal 12 months, then delete (`OPS-4`)                                          |
-| voice turns: transcripts, spoken answers                                                                 | `ai_messages` with `channel = 'voice'`        | contract; no audio is recorded (LiveKit recording off, worker `record: false`)                              | open decision `OPS-4` (proposal 30 days: a transcript is more sensitive than typed text) |
-| the caller's JWT for a live call                                                                         | `voice_calls`, service role only              | needed for the worker to act as the caller                                                                  | ≤ 15 min, deleted on hang-up, swept                                                      |
-| enrolled phone numbers and PIN hashes (Part 11)                                                          | `voice_caller_identities`, service role only  | contract; the number is the caller's identity on the phone channel; a hash of it, never the number, in logs | the enrolment's life, with the user's row; subject access by `user_id`                   |
-| sent to LiveKit: participant identity (`users.id`), room name, job metadata (call token, session id)     | LiveKit Cloud (EU), sub-processor             | contract; the identity is pseudonymous: no name, so no email, reaches LiveKit (`V13`)                       | the call's life, plus LiveKit's own log retention under its DPA (`OPS-5`)                |
-| the Microsoft connection: the mailbox's UPN, granted scopes, sealed refresh and access tokens (Part 13a) | `user_integrations`, tokens service role only | contract; the user connects their own mailbox; disconnecting deletes the tokens, the row keeps the state    | the connection's life, with the user's row; the tokens until disconnect                  |
-| logs and metrics: ids, timings, counts                                                                   | the host's log store, `apps/voice/logs`       | legitimate interest (operations)                                                                            | proposal 30 days                                                                         |
+| Data                                                                                                     | Where                                              | Lawful basis / note                                                                                         | Retention                                                                                |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| account: email, role, language                                                                           | Supabase Auth, `public.users`                      | contract (the company's staff)                                                                              | the account's life                                                                       |
+| chat turns: typed text, answers, tool I/O                                                                | `ai_messages`, `ai_sessions`                       | contract; may contain what the user pasted                                                                  | open: proposal 12 months, then delete (`OPS-4`)                                          |
+| voice turns: transcripts, spoken answers                                                                 | `ai_messages` with `channel = 'voice'`             | contract; no audio is recorded (LiveKit recording off, worker `record: false`)                              | open decision `OPS-4` (proposal 30 days: a transcript is more sensitive than typed text) |
+| the caller's JWT for a live call                                                                         | `voice_calls`, service role only                   | needed for the worker to act as the caller                                                                  | ≤ 15 min, deleted on hang-up, swept                                                      |
+| enrolled phone numbers and PIN hashes (Part 11)                                                          | `voice_caller_identities`, service role only       | contract; the number is the caller's identity on the phone channel; a hash of it, never the number, in logs | the enrolment's life, with the user's row; subject access by `user_id`                   |
+| sent to LiveKit: participant identity (`users.id`), room name, job metadata (call token, session id)     | LiveKit Cloud (EU), sub-processor                  | contract; the identity is pseudonymous: no name, so no email, reaches LiveKit (`V13`)                       | the call's life, plus LiveKit's own log retention under its DPA (`OPS-5`)                |
+| the Microsoft connection: the mailbox's UPN, granted scopes, sealed refresh and access tokens (Part 13a) | `user_integrations`, tokens service role only      | contract; the user connects their own mailbox; disconnecting deletes the tokens, the row keeps the state    | the connection's life, with the user's row; the tokens until disconnect                  |
+| Landmark tool results: project, contract, invoice and payment figures the caller asked for (Part 14)     | `ai_messages` tool_result rows of the conversation | contract; Landmark's own data under its gate and RLS, copied into the caller's own conversation only        | with the conversation's rows (`OPS-4`); Landmark keeps the source                        |
+| logs and metrics: ids, timings, counts                                                                   | the host's log store, `apps/voice/logs`            | legitimate interest (operations)                                                                            | proposal 30 days                                                                         |
 
 Sub-processors (Anthropic, LiveKit, Soniox, ElevenLabs, Supabase, the hosting provider) are
 listed with regions and transfer basis in `docs/OPS.md` → Deploy sketch; the DPAs, the entries in
