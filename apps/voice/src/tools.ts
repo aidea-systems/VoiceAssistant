@@ -7,7 +7,7 @@
 import { type ChannelAllowlist, ToolRegistry } from '@va/core'
 import type { TokenStore } from '@va/integrations'
 import { demoPack } from '@va/tools-demo'
-import { createLandmarkPack, LANDMARK_VOICE_TOOLS, type LandmarkPackConfig } from '@va/tools-landmark'
+import { createLandmarkPack, type LandmarkPackConfig } from '@va/tools-landmark'
 import { createMailPack } from '@va/tools-mail'
 
 import { mailTokenProvider } from './mail.js'
@@ -34,12 +34,27 @@ const SPOKEN_TOOLS = [
   'flag_mail',
 ] as const
 
-// Landmark's twelve (Part 14): every one read-only in Landmark's own catalogue and the v1 list
-// its voice plan chose; on `voice` Landmark clamps the data itself (at most five items per list
-// with the total, text clipped to 200 characters) and the ids it keeps are for chaining only
-// (the pack's rules forbid speaking them). The pack hides what Landmark's role may not call
-// (`/me`), and the phone sends `channel: voice` like the in-app call.
-export const LANDMARK_SPOKEN_TOOLS: readonly string[] = LANDMARK_VOICE_TOOLS
+// Landmark's twelve (Part 14), written out here like every other spoken tool: every one is
+// read-only in Landmark's own catalogue and on the v1 list its voice plan chose; on `voice`
+// Landmark clamps the data (at most five items per list with the total, text clipped to 200
+// characters) and the pack clamps again on its side; the ids kept for chaining are never spoken
+// (the pack's rules). The pack hides what Landmark's role may not call (`/me`), and the phone
+// sends `channel: voice` like the in-app call. A thirteenth Landmark tool reaches a call only
+// by being added here and to the pack's reviewed list (`W45` pins both lists to each other).
+export const LANDMARK_SPOKEN_TOOLS = [
+  'search_projects',
+  'get_project_details',
+  'list_project_phases',
+  'search_subcontractors',
+  'list_cost_classifications',
+  'list_contracts',
+  'get_subcontractor_payment_status',
+  'list_unpaid_invoices',
+  'list_payments_for_subcontractor',
+  'get_invoice_summary',
+  'get_project_financial_summary',
+  'search_help',
+] as const
 
 /** One list for the two spoken channels: the phone (Part 11) hears exactly what the in-app
  * call hears. The readOnly assertion at load covers both keys. */

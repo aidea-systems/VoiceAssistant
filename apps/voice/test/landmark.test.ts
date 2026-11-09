@@ -16,8 +16,11 @@ const PROJECT = '11111111-1111-4111-8111-111111111111'
 const config = () => ({ url: landmark.url, secret: landmark.secret, fetch: landmark.fetch })
 
 describe('the Landmark pack on a call', () => {
-  it('W45 the spoken allowlist: the base list without the pack, the base list plus Landmark\'s twelve with it; every one read-only', () => {
-    expect(LANDMARK_SPOKEN_TOOLS).toEqual(LANDMARK_VOICE_TOOLS)
+  it("W45 the spoken allowlist: the base list without the pack, the base list plus Landmark's twelve with it; every one read-only", () => {
+    // The worker's literal list and the pack's reviewed voice list name the same twelve: a new
+    // Landmark tool reaches a call only by a diff in both.
+    expect([...LANDMARK_SPOKEN_TOOLS]).toEqual(LANDMARK_VOICE_TOOLS)
+    expect([...LANDMARK_SPOKEN_TOOLS]).toEqual(LANDMARK_TOOLS)
     expect(LANDMARK_SPOKEN_TOOLS).toHaveLength(12)
     expect(voiceAllowlist(false)).toBe(VOICE_ALLOWLIST)
     const withPack = voiceAllowlist(true)
@@ -32,12 +35,16 @@ describe('the Landmark pack on a call', () => {
   })
 
   scenario(
-    'W46 a Director on the phone: the gate read as the caller, Landmark posted with channel voice, the clamped data spoken from; the warm-up sends the turn\'s tools',
+    "W46 a Director on the phone: the gate read as the caller, Landmark posted with channel voice, the clamped data spoken from; the warm-up sends the turn's tools",
     async () => {
       landmark.reset()
       landmark.mapUser(USERS.member.email, { role: 'Director' })
       landmark.answer('list_unpaid_invoices', () => ({
-        invoices: Array.from({ length: 8 }, (_, i) => ({ id: `i${i}`, number: `R-${i + 1}`, amount: 1000 * (i + 1) })),
+        invoices: Array.from({ length: 8 }, (_, i) => ({
+          id: `i${i}`,
+          number: `R-${i + 1}`,
+          amount: 1000 * (i + 1),
+        })),
         count: 8,
       }))
       anthropic.script(
@@ -51,7 +58,12 @@ describe('the Landmark pack on a call', () => {
       )
       const call = await openCall({ channel: 'phone', landmark: config() })
       const auth = await call.identity.ctx()
-      await warm(call.deps, auth, await call.session.userContextFor(auth), await call.session.allowedToolsFor(auth))
+      await warm(
+        call.deps,
+        auth,
+        await call.session.userContextFor(auth),
+        await call.session.allowedToolsFor(auth),
+      )
       const out = await (await ask(call, 'Koji računi su neplaćeni na Savskoj?')).done
       expect(out.text).toContain('Osam neplaćenih računa.')
       await call.session.settle()
@@ -76,18 +88,25 @@ describe('the Landmark pack on a call', () => {
     },
   )
 
-  scenario('W47 a Sales caller: the finance tools are neither advertised nor dispatchable on the call', async () => {
-    landmark.reset()
-    landmark.mapUser(USERS.member.email, { role: 'Sales' })
-    anthropic.script(callTools(toolUse('get_invoice_summary', {})), answer('Ne mogu.'))
-    const call = await openCall({ landmark: config() })
-    const out = await (await ask(call, 'Koliko je neplaćenih računa?')).done
-    expect(out.text).toContain('Ne mogu.')
-    await call.session.settle()
-    const names = anthropic.calls[0]!.body.tools!.map((t) => t.name)
-    expect(names).toContain('search_projects')
-    expect(names).not.toContain('get_invoice_summary')
-    expect(landmark.calls.filter((c) => c.route === 'tool')).toHaveLength(0)
-    expect(logs.some((l) => l.line.includes('tool refused at dispatch') && l.line.includes('not_permitted_for_user'))).toBe(true)
-  })
+  scenario(
+    'W47 a Sales caller: the finance tools are neither advertised nor dispatchable on the call',
+    async () => {
+      landmark.reset()
+      landmark.mapUser(USERS.member.email, { role: 'Sales' })
+      anthropic.script(callTools(toolUse('get_invoice_summary', {})), answer('Ne mogu.'))
+      const call = await openCall({ landmark: config() })
+      const out = await (await ask(call, 'Koliko je neplaćenih računa?')).done
+      expect(out.text).toContain('Ne mogu.')
+      await call.session.settle()
+      const names = anthropic.calls[0]!.body.tools!.map((t) => t.name)
+      expect(names).toContain('search_projects')
+      expect(names).not.toContain('get_invoice_summary')
+      expect(landmark.calls.filter((c) => c.route === 'tool')).toHaveLength(0)
+      expect(
+        logs.some(
+          (l) => l.line.includes('tool refused at dispatch') && l.line.includes('not_permitted_for_user'),
+        ),
+      ).toBe(true)
+    },
+  )
 })
