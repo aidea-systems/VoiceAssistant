@@ -23,12 +23,23 @@ describe('the Landmark pack on a call', () => {
     expect([...LANDMARK_SPOKEN_TOOLS]).toEqual(LANDMARK_TOOLS)
     expect(LANDMARK_SPOKEN_TOOLS).toHaveLength(12)
     expect(voiceAllowlist(false)).toBe(VOICE_ALLOWLIST)
+    // With Landmark the demo catalogue leaves the call: the mail tools and the twelve remain.
     const withPack = voiceAllowlist(true)
-    expect(withPack.voice).toEqual([...(VOICE_ALLOWLIST.voice as readonly string[]), ...LANDMARK_TOOLS])
+    expect(withPack.voice).toEqual([
+      'list_mail',
+      'read_mail',
+      'search_mail',
+      'list_calendar',
+      'reply_mail',
+      'flag_mail',
+      ...LANDMARK_TOOLS,
+    ])
     expect(withPack.phone).toEqual(withPack.voice)
     const registry = createRegistry(null, config())
     const phone = registry.select({ role: 'member' }, 'phone').map((t) => t.name)
     for (const name of LANDMARK_TOOLS) expect(phone).toContain(name)
+    expect(phone).not.toContain('search_items')
+    expect(phone).not.toContain('get_item')
     for (const def of registry.all()) if (LANDMARK_TOOLS.includes(def.name)) expect(def.readOnly).toBe(true)
     const without = createRegistry()
     for (const name of LANDMARK_TOOLS) expect(without.exists(name)).toBe(false)
@@ -68,7 +79,8 @@ describe('the Landmark pack on a call', () => {
       expect(out.text).toContain('Osam neplaćenih računa.')
       await call.session.settle()
 
-      const tool = landmark.calls.find((c) => c.route === 'tool')!
+      // The four `search_projects` probes of the projects block come first (W48); then the turn's call.
+      const tool = landmark.calls.find((c) => c.route === 'tool' && c.tool !== 'search_projects')!
       expect(tool).toMatchObject({ tool: 'list_unpaid_invoices', channel: 'voice', sub: USERS.member.email })
       expect(tool.input).toEqual({ project_id: PROJECT, limit: 20 })
       // One /me for the call: the warm-up and the turn share the pack's minute of cache.
@@ -77,7 +89,8 @@ describe('the Landmark pack on a call', () => {
       expect(warmed!.body.tools).toEqual(turn!.body.tools)
       const names = turn!.body.tools!.map((t) => t.name)
       for (const name of LANDMARK_TOOLS) expect(names).toContain(name)
-      expect(names).toContain('search_items')
+      expect(names).toContain('list_mail')
+      expect(names).not.toContain('search_items')
       // Landmark clamped for voice: five of eight, the total beside them.
       const result = JSON.parse(
         (anthropic.calls[2]!.body.messages.at(-1)!.content as Array<{ content: string }>)[0]!.content,
@@ -101,12 +114,54 @@ describe('the Landmark pack on a call', () => {
       const names = anthropic.calls[0]!.body.tools!.map((t) => t.name)
       expect(names).toContain('search_projects')
       expect(names).not.toContain('get_invoice_summary')
-      expect(landmark.calls.filter((c) => c.route === 'tool')).toHaveLength(0)
+      expect(landmark.calls.filter((c) => c.route === 'tool' && c.tool !== 'search_projects')).toHaveLength(0)
       expect(
         logs.some(
           (l) => l.line.includes('tool refused at dispatch') && l.line.includes('not_permitted_for_user'),
         ),
       ).toBe(true)
+    },
+  )
+
+  scenario(
+    "W48 the caller's projects are in the user block of a call (read once, while the greeting plays) and the demo catalogue is not; a project question is one tool round",
+    async () => {
+      landmark.reset()
+      landmark.mapUser(USERS.member.email, { role: 'Director' })
+      const PROJECTS = [
+        { id: PROJECT, name: 'Funtana', location: 'Funtana', status: 'In Progress' },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Zabok',
+          location: 'Zabok',
+          status: 'In Progress',
+        },
+      ]
+      landmark.answer('search_projects', (input) => ({
+        projects: PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query))),
+        count: 0,
+      }))
+      landmark.answer('get_project_financial_summary', () => ({ budget: 19300000, contracted: 0, paid: 0 }))
+      anthropic.script(
+        callTools(toolUse('get_project_financial_summary', { project_id: PROJECT })),
+        answer('Oko devetnaest milijuna.'),
+      )
+      const call = await openCall({ channel: 'phone', landmark: config() })
+      const out = await (await ask(call, 'Kako stoji budžet Funtane?')).done
+      expect(out.text).toContain('Oko devetnaest milijuna.')
+      await call.session.settle()
+      const system = anthropic.calls[0]!.body.system as Array<{ text: string }>
+      expect(system[1]!.text).toContain('## Projekti u Landmarku')
+      expect(system[1]!.text).toContain(`Funtana — In Progress — Funtana — ${PROJECT}`)
+      expect(system[1]!.text).not.toContain('## Katalog')
+      expect(landmark.calls.filter((c) => c.route === 'tool').map((c) => c.tool)).toEqual([
+        'search_projects',
+        'search_projects',
+        'search_projects',
+        'search_projects',
+        'get_project_financial_summary',
+      ])
+      expect(logs.find((l) => l.line.includes('"user context"'))?.line).toMatch(/"blocks":1/)
     },
   )
 })

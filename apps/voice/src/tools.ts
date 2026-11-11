@@ -63,11 +63,19 @@ export const VOICE_ALLOWLIST: ChannelAllowlist = {
   phone: SPOKEN_TOOLS,
 }
 
-/** The spoken allowlist of a process: the base list, plus Landmark's twelve when its pack is
- * registered (an allowlist may not name an unregistered tool). */
+/** The demo pack's two reads: on a call only while Landmark is not registered. */
+const DEMO_SPOKEN_TOOLS = ['search_items', 'get_item'] as const
+
+/** The spoken allowlist of a process: the base list, or, when the Landmark pack is registered,
+ * the mail tools and Landmark's twelve without the demo catalogue (an allowlist may not name an
+ * unregistered tool; and every tool a caller may reach costs the model deliberation before its
+ * first call, measured 2026-11-11, so a demo catalogue has no place next to the company's data). */
 export function voiceAllowlist(withLandmark: boolean): ChannelAllowlist {
   if (!withLandmark) return VOICE_ALLOWLIST
-  const spoken = [...SPOKEN_TOOLS, ...LANDMARK_SPOKEN_TOOLS]
+  const spoken = [
+    ...SPOKEN_TOOLS.filter((name) => !(DEMO_SPOKEN_TOOLS as readonly string[]).includes(name)),
+    ...LANDMARK_SPOKEN_TOOLS,
+  ]
   return { voice: spoken, phone: spoken }
 }
 

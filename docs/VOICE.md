@@ -246,9 +246,13 @@ first call grew (`l06`, a turn with no tool, took 2.56 s). (2) Most questions ne
 listing the caller's projects would remove it, as the catalogue block did for the demo pack,
 once Landmark can list projects (its `search_projects` needs a name; `LM-1`). (3) The very first
 request after a deploy paid the strict-schema compilation once (`l01`, a 10 s first round;
-cached for a day after that). Levers to measure next: Haiku 5.5 on the phone (`AI_PHONE_MODEL`),
-the projects block, fewer tools on voice when Landmark is on (the demo pack off), and Landmark's
-session reuse (`COLLAB-17`, about half a second per call). `l07` answered "Landmark trenutno nije
+cached for a day after that). Two of the levers followed the same day (`feat/landmark-projects-block`): the caller's
+projects as the per-user block (`docs/LANDMARK.md`), the demo catalogue off the spoken allowlist
+when Landmark is on (eighteen tools), a sentence in the voice prompt to pick the tool at once
+(the cache key of the voice prompt changed), and the per-user context deadline raised from 2 s
+to 6 s for the four probes; the bench after is owed. Still to measure: Haiku 5.5 on the phone
+(`AI_PHONE_MODEL`) and Landmark's own changes (`docs/requests/landmark-latency-request.md`:
+session reuse, a list endpoint, shorter descriptions). `l07` answered "Landmark trenutno nije
 dostupan" after a 200 from `search_help`: to look at in chat, where the tool result is visible
 (`LM-2`).
 
