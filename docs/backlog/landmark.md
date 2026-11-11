@@ -6,20 +6,6 @@ The company pack (`packages/tools-landmark`) and what it needs from Landmark's s
 
 ## Open
 
-### LM-1 · Medium · A per-user block with the caller's projects, once Landmark can list them
-
-- **Check:** Confirmed (the Landmark bench of 2026-11-11, `docs/VOICE.md` → Measurements)
-- **Where:** `packages/tools-landmark/src/index.ts` has no `userContext`; Landmark's
-  `search_projects` needs a name (`minLength: 1`), so there is no way to list the caller's
-  projects; the model searches by vowels in chat and spends a `search_projects` round on every
-  spoken question that names a project
-- **What happens:** most spoken Landmark questions take three model rounds instead of two,
-  about 3 s more each
-- **Fix direction:** ask Landmark for `list_projects` (or an empty `query` meaning all), then a
-  `userContext` hook in the pack: `## Projekti` with name, status and id (ids for chaining, the
-  rules forbid speaking them; trusted fields only, flattened and clipped, bounded like the
-  catalogue block), read once per call; the bench before and after
-
 ### LM-2 · Low · `search_help` on voice answered "Landmark trenutno nije dostupan" after a 200
 
 - **Check:** Confirmed once (`l07` in the bench of 2026-11-11)
@@ -42,3 +28,11 @@ The company pack (`packages/tools-landmark`) and what it needs from Landmark's s
   (c) shorter descriptions in the manifest (an ask to Landmark); keep what the bench justifies
 
 ## Resolved
+
+### LM-1 · Medium · The caller's projects as a per-user block (interim 2026-11-11)
+
+- Built on `feat/landmark-projects-block`: `ProjectsContext` gathers the caller's projects with
+  one `search_projects` per vowel once per call, five minutes per user, and the block gives the
+  model the ids (`L17`, `W48`); the demo catalogue left the spoken allowlist when Landmark is
+  on. The clean form, one call to a list endpoint, is asked of Landmark in
+  `docs/requests/landmark-latency-request.md`; when it lands, `PROJECT_PROBES` goes.

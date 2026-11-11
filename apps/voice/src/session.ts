@@ -45,7 +45,10 @@ export const IDENTITY_TIMEOUT_MS = 5_000
 /** How long the one-per-call read of the packs' per-user context may take (the catalogue read
  * is ~0.1 s) before the call goes without it: the hint saves a model round, it must never cost
  * one. */
-export const USER_CONTEXT_TIMEOUT_MS = 2_000
+/** The packs' per-user reads run while the greeting plays; the Landmark projects block is four
+ * calls to Landmark one after another, about three seconds (2026-11-11), so the deadline leaves
+ * room for them and still ends a hung read before the caller's first question waits long. */
+export const USER_CONTEXT_TIMEOUT_MS = 6_000
 
 export interface TurnIO {
   /** What the caller just said. */
@@ -136,7 +139,11 @@ export class CallSession {
         return null
       }
       if (read.value !== null)
-        log('info', LOG_TAG, 'allowed tools', { ...ids, ms: Math.round(performance.now() - t0), count: read.value.size })
+        log('info', LOG_TAG, 'allowed tools', {
+          ...ids,
+          ms: Math.round(performance.now() - t0),
+          count: read.value.size,
+        })
       return read.value
     } catch (err) {
       log('warn', LOG_TAG, 'allowed tools failed', { ...ids, reason: errorReason(err) })
