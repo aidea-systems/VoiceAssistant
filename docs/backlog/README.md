@@ -5,15 +5,16 @@ open items. Add with `/backlog`.
 
 ## Files
 
-| File                       | Covers                                                                           | Ids       |
-| -------------------------- | -------------------------------------------------------------------------------- | --------- |
-| [release.md](./release.md) | Written but not live: migrations to apply, secrets to set, checks nobody has run | `REL-n`   |
-| [core.md](./core.md)       | The engine: loop, tools, prompts, history, sinks, fakes                          | `CORE-n`  |
-| [api.md](./api.md)         | HTTP API, SSE, rate limits, voice session endpoints                              | `API-n`   |
-| [voice.md](./voice.md)     | Worker, STT/TTS adapters, latency, bench                                         | `VOICE-n` |
-| [web.md](./web.md)         | PWA: chat, call, auth, i18n, service worker                                      | `WEB-n`   |
-| [db.md](./db.md)           | Schema, RLS, functions, pgTAP, generated types                                   | `DB-n`    |
-| [ops.md](./ops.md)         | CI, hooks, env, logging, deploy, dependencies                                    | `OPS-n`   |
+| File                         | Covers                                                                           | Ids       |
+| ---------------------------- | -------------------------------------------------------------------------------- | --------- |
+| [release.md](./release.md)   | Written but not live: migrations to apply, secrets to set, checks nobody has run | `REL-n`   |
+| [core.md](./core.md)         | The engine: loop, tools, prompts, history, sinks, fakes                          | `CORE-n`  |
+| [api.md](./api.md)           | HTTP API, SSE, rate limits, voice session endpoints                              | `API-n`   |
+| [voice.md](./voice.md)       | Worker, STT/TTS adapters, latency, bench                                         | `VOICE-n` |
+| [web.md](./web.md)           | PWA: chat, call, auth, i18n, service worker                                      | `WEB-n`   |
+| [db.md](./db.md)             | Schema, RLS, functions, pgTAP, generated types                                   | `DB-n`    |
+| [ops.md](./ops.md)           | CI, hooks, env, logging, deploy, dependencies                                    | `OPS-n`   |
+| [landmark.md](./landmark.md) | The company pack and what it needs from Landmark's side                          | `LM-n`    |
 
 ## Adding and closing items
 

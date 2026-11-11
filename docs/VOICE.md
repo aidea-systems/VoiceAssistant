@@ -205,20 +205,21 @@ in-process worker removes the function's cold start (~1.5 s) and the HTTP hop.
 
 ### Measurements
 
-| Date       | Commit    | What changed                                             | Model                      | First text p50 / p95                                       | Whole answer p50 / p95 | Rounds | n   |
-| ---------- | --------- | -------------------------------------------------------- | -------------------------- | ---------------------------------------------------------- | ---------------------- | ------ | --- |
-| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                  | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s                                            | 5.94 s / 9.37 s        | 2.69   | 36  |
-| 2026-10-29 | `e57f31c` | demo tables seeded                                       | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s                                            | 4.22 s / 9.08 s        | 2.08   | 36  |
-| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)            | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s                                            | 4.33 s / 8.76 s        | 2.06   | 36  |
-| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23) | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s                                            | 4.18 s / 13.79 s       | 2.03   | 36  |
-| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept) | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s                                            | 4.02 s / 8.81 s        | 2.06   | 36  |
-| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                     | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s                                            | 4.09 s / 9.23 s        | 2.03   | 36  |
-| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)      | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s                                            | 4.70 s / 10.80 s       | 2.03   | 36  |
-| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules         | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s                                            | 4.34 s / 9.07 s        | 2.03   | 36  |
-| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)   | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s                                            | 4.84 s / 8.30 s        | 2.08   | 36  |
-| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule         | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s                                            | 4.50 s / 8.70 s        | 2.08   | 36  |
-| 2026-11-09 | `88025f0` | baseline for the early filler and the catalogue block    | `claude-sonnet-5-5`, `low` | 1.64 s / 2.80 s                                            | 4.09 s / 7.46 s        | 2.06   | 36  |
-| 2026-11-09 | `14ed3ab` | early filler 700 ms + the catalogue in the user block    | `claude-sonnet-5-5`, `low` | 0.70 s / 0.70 s (the filler); first answer 1.49 s / 2.64 s | 1.74 s / 2.77 s        | 1.00   | 36  |
+| Date       | Commit    | What changed                                                                                                 | Model                      | First text p50 / p95                                        | Whole answer p50 / p95 | Rounds | n   |
+| ---------- | --------- | ------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------------------- | ---------------------- | ------ | --- |
+| 2026-10-29 | `6490fc2` | Part 5 baseline (bench)                                                                                      | `claude-sonnet-5-5`, `low` | 1.77 s / 4.95 s                                             | 5.94 s / 9.37 s        | 2.69   | 36  |
+| 2026-10-29 | `e57f31c` | demo tables seeded                                                                                           | `claude-sonnet-5-5`, `low` | 1.85 s / 2.84 s                                             | 4.22 s / 9.08 s        | 2.08   | 36  |
+| 2026-10-30 | `d764023` | review fixes, baseline for `VOICE-8` (PR #22)                                                                | `claude-sonnet-5-5`, `low` | 1.83 s / 2.86 s                                             | 4.33 s / 8.76 s        | 2.06   | 36  |
+| 2026-10-30 | `1bde7af` | `VOICE-8` lever 1: the sink's 200 ms hold timer (PR #23)                                                     | `claude-sonnet-5-5`, `low` | 1.79 s / 2.87 s                                             | 4.18 s / 13.79 s       | 2.03   | 36  |
+| 2026-10-30 | `d5240fa` | `VOICE-8` lever 2: paragraph breaks collapsed (not kept)                                                     | `claude-sonnet-5-5`, `low` | 1.78 s / 3.17 s                                             | 4.02 s / 8.81 s        | 2.06   | 36  |
+| 2026-11-04 | `021b455` | before Part 13b (`main`, 13a merged)                                                                         | `claude-sonnet-5-5`, `low` | 1.74 s / 3.66 s                                             | 4.09 s / 9.23 s        | 2.03   | 36  |
+| 2026-11-04 | `c3d2f81` | 13b: the mail pack on voice (four tools, the rules)                                                          | `claude-sonnet-5-5`, `low` | 1.94 s / 5.24 s                                             | 4.70 s / 10.80 s       | 2.03   | 36  |
+| 2026-11-04 | `91b06fe` | 13b trimmed: shorter mail descriptions and rules                                                             | `claude-sonnet-5-5`, `low` | 1.82 s / 2.98 s                                             | 4.34 s / 9.07 s        | 2.03   | 36  |
+| 2026-11-04 | `3edafe7` | 13c: the mail writes, the confirmation rule (VOICE-18)                                                       | `claude-sonnet-5-5`, `low` | 1.87 s / 3.33 s                                             | 4.84 s / 8.30 s        | 2.08   | 36  |
+| 2026-11-04 | `16fd4c5` | 13c trimmed: shorter write descriptions and rule                                                             | `claude-sonnet-5-5`, `low` | 1.89 s / 2.49 s                                             | 4.50 s / 8.70 s        | 2.08   | 36  |
+| 2026-11-09 | `88025f0` | baseline for the early filler and the catalogue block                                                        | `claude-sonnet-5-5`, `low` | 1.64 s / 2.80 s                                             | 4.09 s / 7.46 s        | 2.06   | 36  |
+| 2026-11-09 | `14ed3ab` | early filler 700 ms + the catalogue in the user block                                                        | `claude-sonnet-5-5`, `low` | 0.70 s / 0.70 s (the filler); first answer 1.49 s / 2.64 s  | 1.74 s / 2.77 s        | 1.00   | 36  |
+| 2026-11-11 | `e6e61f4` | the Landmark pack on voice, the Landmark question set (`questions.landmark.hr.txt`, one repeat, LandmarkDev) | `claude-sonnet-5-5`, `low` | 0.70 s / 0.71 s (the filler); first answer 7.11 s / 17.45 s | 7.11 s / 17.45 s       | 2.38   | 8   |
 
 **The early filler and the catalogue block (2026-11-09).** Two levers from Landmark's tuning
 list, measured together on the local stack, three repeats, the nine seeded items. The early
@@ -232,6 +233,24 @@ What the bench does not judge is the answers themselves: with the block the mode
 the prompt, so a run with `SHOW_ANSWERS=1` is read before this is called done on the live call.
 The paragraph-break count now subtracts the filler's own break whenever a filler was spoken, not
 only on tool answers.
+
+**The Landmark pack on the spoken turn (2026-11-11).** The first bench with Landmark's twelve on
+the voice allowlist, eight Landmark questions once each against LandmarkDev, signed in as the
+mapped Director: every answer correct and spoken-shaped, every Landmark call 200 (the gate read
+1.77 s once; a tool call 0.5–1.0 s), and the latency far above the budget: first answer p50
+7.11 s, p95 17.45 s, 2.38 rounds. Three causes, in order of size. (1) The first model round
+of a turn that ends in a tool call took 3.6–5.4 s against about 1 s before the pack: with
+twenty tools, Landmark's long descriptions and its rules, `between_tools` thinking before the
+first call grew (`l06`, a turn with no tool, took 2.56 s). (2) Most questions need a
+`search_projects` round for the id before the real tool, about 3 s more; a per-user block
+listing the caller's projects would remove it, as the catalogue block did for the demo pack,
+once Landmark can list projects (its `search_projects` needs a name; `LM-1`). (3) The very first
+request after a deploy paid the strict-schema compilation once (`l01`, a 10 s first round;
+cached for a day after that). Levers to measure next: Haiku 5.5 on the phone (`AI_PHONE_MODEL`),
+the projects block, fewer tools on voice when Landmark is on (the demo pack off), and Landmark's
+session reuse (`COLLAB-17`, about half a second per call). `l07` answered "Landmark trenutno nije
+dostupan" after a 200 from `search_help`: to look at in chat, where the tool result is visible
+(`LM-2`).
 
 The first hosted call on the deployed build (`a11b8f6`, four turns, all one model round) landed
 where the bench said: first text 0.70 s on every turn (the filler), first answer 1.34–2.20 s,
@@ -379,6 +398,9 @@ configured Supabase project: `bench/questions.hr.txt` (ten product-neutral quest
 pack answers, plus two small-talk lines) × N repeats, each on a fresh single-turn conversation,
 through the same `runVoiceTurn` as the worker, with the packs' per-user context read once as
 the worker reads it per call. It opens a voice session of its own and deletes it at the end.
+`BENCH_QUESTIONS=bench/questions.landmark.hr.txt` runs the Landmark set instead (Part 14; the
+pack joins the bench's registry when the key file carries `LANDMARK_API_URL` and
+`LANDMARK_ASSISTANT_SECRET`, and the bench user must be the mapped Director).
 `first` is the first spoken text, the early filler included once `FILLER_AFTER_MS` is on;
 `answer` is the first text of the answer itself, the figure a filler cannot move. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
 `AI_VOICE_MODEL` / `AI_VOICE_EFFORT` to compare models; `LABEL` tags the rows.
