@@ -24,6 +24,11 @@ export type RefusalReason =
  * null (and undefined) for none. Passed to `select`, `find` and `anthropicTools` alike. */
 export type AllowedTools = ReadonlySet<string> | null | undefined
 
+/** The API accepts at most this many `strict: true` tools in one request (a 400 names it);
+ * past it, the request keeps strict on the confirmed writes first and then by name, and the
+ * rest rely on zod at dispatch alone. */
+export const MAX_STRICT_TOOLS = 20
+
 export class ToolRegistry {
   private readonly byName = new Map<string, ToolDefinition<unknown>>()
   private readonly allowlist: ChannelAllowlist
@@ -87,7 +92,11 @@ export class ToolRegistry {
    * (`allowed tools failed`, the pack's name, no content) and leaves its pack unrestricted, as
    * a null answer does: dispatch then meets the pack's own error.
    */
-  async allowedTools(ctx: AuthContext, channel: Channel, signal: AbortSignal): Promise<ReadonlySet<string> | null> {
+  async allowedTools(
+    ctx: AuthContext,
+    channel: Channel,
+    signal: AbortSignal,
+  ): Promise<ReadonlySet<string> | null> {
     const advertised = new Set(this.select(ctx, channel).map((t) => t.name))
     const asked = this.packs.filter((p) => p.allowedTools && p.tools.some((t) => advertised.has(t.name)))
     if (asked.length === 0) return null
@@ -124,7 +133,11 @@ export class ToolRegistry {
 
   /** The tools this role may use on this channel (role ∩ channel ∩ the per-user restriction,
    * when one is given), sorted by name. */
-  select(ctx: Pick<AuthContext, 'role'>, channel: Channel, allowed?: AllowedTools): ToolDefinition<unknown>[] {
+  select(
+    ctx: Pick<AuthContext, 'role'>,
+    channel: Channel,
+    allowed?: AllowedTools,
+  ): ToolDefinition<unknown>[] {
     const names = this.allowlist[channel] ?? []
     return this.all().filter(
       (t) =>
@@ -168,7 +181,22 @@ export class ToolRegistry {
     const key = `${ctx.role}:${channel}:${allowed == null ? '*' : [...allowed].sort().join(',')}`
     let tools = this.advertised.get(key)
     if (!tools) {
-      tools = this.select(ctx, channel, allowed).map(toAnthropicTool)
+      const selected = this.select(ctx, channel, allowed)
+      const strict = new Set(
+        [...selected]
+          .sort(
+            (a, b) =>
+              Number(b.confirmation === 'required') - Number(a.confirmation === 'required') || byName(a, b),
+          )
+          .slice(0, MAX_STRICT_TOOLS)
+          .map((t) => t.name),
+      )
+      tools = selected.map((t) => {
+        const tool = toAnthropicTool(t)
+        if (strict.has(t.name)) return tool
+        const { strict: _strict, ...loose } = tool
+        return loose
+      })
       const last = tools.at(-1)
       if (last) last.cache_control = { type: 'ephemeral' }
       this.advertised.set(key, tools)

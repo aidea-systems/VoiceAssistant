@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { Role } from '../auth.js'
 import type { Channel } from '../channel.js'
 import { defineTool, type ToolPack } from './define.js'
-import { ToolRegistry } from './registry.js'
+import { MAX_STRICT_TOOLS, ToolRegistry } from './registry.js'
 import { toAnthropicTool } from './schema.js'
 
 const ROLES: Role[] = ['admin', 'member']
@@ -326,12 +326,19 @@ describe('ToolRegistry', () => {
     expect(registry.find(ctx, 'count_things', 'chat')).toBeDefined()
     expect(registry.refusalReason(ctx, 'count_things', 'chat', allowed)).toBe('not_permitted_for_user')
     expect(registry.refusalReason(ctx, 'count_things', 'voice', allowed)).toBe('not_permitted_on_channel')
-    expect(registry.refusalReason({ role: 'member' }, 'audit_things', 'chat', allowed)).toBe('not_permitted_for_role')
+    expect(registry.refusalReason({ role: 'member' }, 'audit_things', 'chat', allowed)).toBe(
+      'not_permitted_for_role',
+    )
     expect(registry.refusalReason(ctx, 'nope', 'chat', allowed)).toBe('unknown_tool')
     expect(registry.refusalReason(ctx, 'see_things', 'chat', allowed)).toBeNull()
     // The request's tools follow the restriction and are memoised per restriction.
     const restricted = registry.anthropicTools(ctx, 'chat', allowed)
-    expect(restricted.map((t) => t.name)).toEqual(['audit_things', 'create_thing', 'search_things', 'see_things'])
+    expect(restricted.map((t) => t.name)).toEqual([
+      'audit_things',
+      'create_thing',
+      'search_things',
+      'see_things',
+    ])
     expect(restricted.at(-1)?.cache_control).toEqual({ type: 'ephemeral' })
     expect(registry.anthropicTools(ctx, 'chat', new Set(allowed!))).toBe(restricted)
     expect(registry.anthropicTools(ctx, 'chat').map((t) => t.name)).toContain('count_things')
@@ -353,7 +360,7 @@ describe('ToolRegistry', () => {
   it('T12: a tool with its own inputSchema advertises that schema in strict form; zod still validates at dispatch', () => {
     const fromManifest = defineTool({
       name: 'from_manifest',
-      description: 'Built from another system\'s schema.',
+      description: "Built from another system's schema.",
       input: z.object({ query: z.string().min(1), limit: z.int().min(1).max(100).default(20) }),
       inputSchema: {
         $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -370,7 +377,10 @@ describe('ToolRegistry', () => {
       handler: async () => ({}),
     })
     const tool = toAnthropicTool(fromManifest)
-    const schema = tool.input_schema as { properties: Record<string, Record<string, unknown>>; required: string[] }
+    const schema = tool.input_schema as {
+      properties: Record<string, Record<string, unknown>>
+      required: string[]
+    }
     expect(tool.strict).toBe(true)
     expect(schema.required).toEqual(['query'])
     expect(schema.properties.query!.description).toContain('Substring to match.')
@@ -380,5 +390,28 @@ describe('ToolRegistry', () => {
     // The definition's own document is not touched.
     expect(fromManifest.inputSchema).toHaveProperty('$schema')
     expect(fromManifest.input.safeParse({ query: '' }).success).toBe(false)
+  })
+
+  it('T13: at most MAX_STRICT_TOOLS tools are strict in one request: the confirmed writes first, then by name; the rest keep their schema without strict', () => {
+    const reads = Array.from({ length: 21 }, (_, i) =>
+      defineTool({
+        name: `read_${String(i).padStart(2, '0')}`,
+        description: 'A read.',
+        input: z.object({ q: z.string().describe('Q.') }),
+        requiredRoles: ['admin', 'member'],
+        readOnly: true,
+        handler: async () => ({}),
+      }),
+    )
+    const pack: ToolPack = { name: 'many', tools: [...reads, write] as ToolPack['tools'] }
+    const registry = new ToolRegistry([pack], { chat: 'all' })
+    const tools = registry.anthropicTools({ role: 'admin' }, 'chat')
+    expect(tools).toHaveLength(22)
+    expect(tools.filter((t) => t.strict === true)).toHaveLength(MAX_STRICT_TOOLS)
+    expect(tools.find((t) => t.name === 'create_thing')?.strict).toBe(true)
+    // The last two by name among the reads are the ones without strict.
+    expect(tools.filter((t) => t.strict === undefined).map((t) => t.name)).toEqual(['read_19', 'read_20'])
+    expect(tools.every((t) => t.input_schema.type === 'object')).toBe(true)
+    expect(tools.at(-1)?.cache_control).toEqual({ type: 'ephemeral' })
   })
 })
