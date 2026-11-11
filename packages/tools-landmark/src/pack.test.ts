@@ -629,4 +629,40 @@ describe('@va/tools-landmark', () => {
       ).toBe(true)
     },
   )
+
+  scenario(
+    'L16 parallel calls of one user reach Landmark one at a time, in order, each with its own result; two users do not wait for each other',
+    async () => {
+      landmark.mapUser(USERS.admin.email, { role: 'Director' })
+      anthropic.script(
+        callTools(
+          toolUse('search_projects', { query: 'Sav' }),
+          toolUse('search_projects', { query: 'Savska' }),
+          toolUse('search_projects', { query: 'Sava' }),
+        ),
+        answer('Jedan projekt.'),
+      )
+      const ctx = await authAs('member')
+      const run = await runChat(ctx, 'x', { packs: [pack()], allowlist: ALLOWLIST })
+      expect(run.sink.toolResults.map((r) => r.isError)).toEqual([false, false, false])
+      expect(toolCalls().map((c) => (c.input as { query: string }).query)).toEqual(['Sav', 'Savska', 'Sava'])
+      expect(landmark.maxConcurrentToolCalls).toBe(1)
+
+      // Two users share nothing: their calls may overlap.
+      landmark.reset()
+      landmark.clock = () => now
+      landmark.mapUser(USERS.member.email, { role: 'Director' })
+      landmark.mapUser(USERS.admin.email, { role: 'Director' })
+      landmark.answer('search_projects', () => ({ projects: [], count: 0 }))
+      const p = pack()
+      const signal = new AbortController().signal
+      const admin = await authAs('admin')
+      await Promise.all([
+        p.tools[0]!.handler({ query: 'a', limit: 20 }, ctx, { requestId: 'r1', channel: 'chat' }, signal),
+        p.tools[0]!.handler({ query: 'b', limit: 20 }, admin, { requestId: 'r2', channel: 'chat' }, signal),
+      ])
+      expect(landmark.calls.map((c) => c.assertionProblem)).toEqual([null, null])
+      expect(landmark.maxConcurrentToolCalls).toBe(2)
+    },
+  )
 })

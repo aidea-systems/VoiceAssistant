@@ -60,6 +60,8 @@ export class LandmarkAccess {
   private readonly me = new Map<string, { value: ReadonlySet<string> | null; expiresAt: number }>()
   /** `/me` reads under way, so the tools of one round and the warm-up share one request. */
   private readonly reading = new Map<string, Promise<ReadonlySet<string> | null>>()
+  /** The tail of each user's queue: Landmark calls of one user run one at a time (below). */
+  private readonly queues = new Map<string, Promise<unknown>>()
 
   constructor(config: LandmarkAccessConfig) {
     this.clock = config.clock ?? (() => new Date())
@@ -72,8 +74,36 @@ export class LandmarkAccess {
     this.names = new Set(config.toolNames)
   }
 
-  /** One tool call as the user; never throws except on the owner's abort. */
-  async call(
+  /**
+   * One tool call as the user; never throws except on the owner's abort. Calls of one user
+   * run one at a time: every call mints the user a magic-link session on Landmark's side and
+   * GoTrue keeps one pending link per user, so parallel calls (the model searching with several
+   * queries at once) raced and the earlier links failed at verification (seen on the first
+   * hosted check, 2026-11-11). The queue costs the parallel calls their overlap, about a second
+   * each, until Landmark reuses a session per user (its `COLLAB-17`).
+   */
+  call(
+    ctx: AuthContext,
+    name: string,
+    input: Record<string, unknown>,
+    channel: Channel,
+    signal: AbortSignal,
+    requestId: string,
+  ): Promise<unknown> {
+    const previous = this.queues.get(ctx.userId) ?? Promise.resolve()
+    const run = previous
+      .catch(() => undefined)
+      .then(() => this.callNow(ctx, name, input, channel, signal, requestId))
+    this.queues.set(ctx.userId, run)
+    void run
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.queues.get(ctx.userId) === run) this.queues.delete(ctx.userId)
+      })
+    return run
+  }
+
+  private async callNow(
     ctx: AuthContext,
     name: string,
     input: Record<string, unknown>,
@@ -83,6 +113,8 @@ export class LandmarkAccess {
   ): Promise<unknown> {
     const ids = { user_id: ctx.userId, request_id: requestId }
     const lm = toLandmarkChannel(channel)
+    // A call that waited in the queue past its owner's abort is not sent.
+    if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('aborted')
     try {
       const sub = subjectFor(ctx, this.clock())
       const answer = await this.client.call(name, input, lm, sub, signal, ids)

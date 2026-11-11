@@ -40,6 +40,9 @@ export const FAKE_LANDMARK_SECRET = 'fake-landmark-secret-for-tests'
 export class FakeLandmark {
   calls: LandmarkCall[] = []
   unexpectedCalls = 0
+  /** The most tool calls that were in flight at once: Landmark's session minting cannot take two. */
+  maxConcurrentToolCalls = 0
+  private inFlight = 0
   /** email (lower case) → the Landmark user. */
   users = new Map<string, FakeLandmarkUser>()
   clock: () => Date = () => new Date()
@@ -59,6 +62,8 @@ export class FakeLandmark {
   reset(): void {
     this.calls = []
     this.unexpectedCalls = 0
+    this.maxConcurrentToolCalls = 0
+    this.inFlight = 0
     this.users.clear()
     this.answers.clear()
     this.faults = []
@@ -182,10 +187,16 @@ export class FakeLandmark {
     const answer = this.answers.get(tool!)
     if (!answer) return fail(500, 'internal_error', `fake-landmark: no answer registered for ${tool}`)
     let result: unknown
+    this.inFlight++
+    this.maxConcurrentToolCalls = Math.max(this.maxConcurrentToolCalls, this.inFlight)
     try {
+      // The session minting takes a moment; overlapping calls of one user would race here.
+      await new Promise((resolve) => setTimeout(resolve, 5))
       result = await answer((body as { input: Record<string, unknown> }).input, channel, user)
     } catch {
       return fail(500, 'internal_error', 'handler threw')
+    } finally {
+      this.inFlight--
     }
     if (isObject(result) && 'error' in result) return json(200, { data: { error: result.error } })
     return json(200, {
