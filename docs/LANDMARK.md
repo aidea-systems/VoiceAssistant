@@ -19,6 +19,7 @@ packages/tools-landmark/            @va/tools-landmark   tools-* → core (defin
 ├── src/assertion.ts                signAssertion: HS256, iss va, aud landmark-assistant-api, sub, 60 s, jti
 ├── src/subject.ts                  subjectOf: who may be signed for (confirmed, not banned, same address), from ctx.auth, no read
 ├── src/reviewed.ts                 REVIEWED_TOOLS: the twelve names this repo accepts from a manifest; MAX_LIMIT, MAX_INPUT_CHARS
+├── src/projects-context.ts         ProjectsContext: the caller's projects as the per-user block, four probes once per call, 5 min
 ├── src/clamp.ts                    clampForVoice, clipText: the voice clamps applied here too; refusal text bounded
 ├── src/client.ts                   createLandmarkClient: POST /me, /manifest, /tools/<name>; LandmarkError
 ├── src/access.ts                   LandmarkAccess: call (every outcome as what the model reads), allowedTools (/me, 60 s)
@@ -84,6 +85,25 @@ is shown is what dispatch resolves (`not_permitted_for_user` otherwise, invarian
 reads it per chat request (`stream.ts`); the worker per turn and for the warm-up
 (`CallSession.allowedToolsFor`), the pack's cache making it one request per call in practice.
 Tests: `T11`, `E39`, `L05`–`L07`, `LA01`, `LA02`, `W46`, `W47`.
+
+## The caller's projects in the prompt
+
+On a call the pack's `userContext` (read once while the greeting plays, `CallSession.userContextFor`)
+lists the caller's projects: `## Projekti u Landmarku`, then name, status, place and id per
+project, then a rule to call the tool with that id at once and never speak it (`L17`, `W48`).
+Landmark has no list endpoint yet, so the list is gathered as the model did it in chat, one
+`search_projects` per vowel (a, e, i, o) as `chat` with limit 100, through the per-user queue,
+about three seconds, and kept for five minutes per user; a project whose name has no vowel is
+searched as before. Nothing to list is said outright; more than 40 projects, or more than
+3,000 characters, leaves the block out and the model searches; a failed probe is logged by the
+registry and costs the block, not the call. Measured need: without it every spoken project
+question spends a search round for the id, about 3 s (`docs/VOICE.md`, 2026-11-11). The latency
+request asks Landmark for a list endpoint, which makes this one call
+(`docs/requests/landmark-latency-request.md`).
+
+When the pack is registered, the worker's spoken allowlist drops the demo catalogue
+(`voiceAllowlist(true)`: the mail tools and the twelve), so the catalogue block leaves the prompt
+too: every tool the caller may reach costs the model deliberation before its first call.
 
 ## The manifest
 

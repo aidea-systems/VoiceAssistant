@@ -7,6 +7,7 @@ import type { ToolPack } from '@va/core'
 
 import { LandmarkAccess } from './access.js'
 import { type LandmarkManifest, MANIFEST } from './manifest.js'
+import { ProjectsContext } from './projects-context.js'
 import { REVIEWED_VOICE_TOOLS } from './reviewed.js'
 import { LANDMARK_RULES_HR } from './rules.hr.js'
 import { landmarkTool } from './tools.js'
@@ -38,7 +39,7 @@ export function landmarkDomainRules(manifest: LandmarkManifest = MANIFEST): stri
   return `${manifest.domain_rules_hr}\n\n${LANDMARK_RULES_HR}`
 }
 
-/** One pack per process: its caches (the confirmed address and `/me`, 60 s each) live with it. */
+/** One pack per process: its caches (`/me` for 60 s, the caller's projects for five minutes) live with it. */
 export function createLandmarkPack(config: LandmarkPackConfig): ToolPack {
   const manifest = config.manifest ?? MANIFEST
   const access = new LandmarkAccess({
@@ -48,11 +49,13 @@ export function createLandmarkPack(config: LandmarkPackConfig): ToolPack {
     ...(config.fetch ? { fetch: config.fetch } : {}),
     ...(config.clock ? { clock: config.clock } : {}),
   })
+  const projects = new ProjectsContext(access, config.clock ?? (() => new Date()))
   return {
     name: LANDMARK_PACK_NAME,
     tools: manifest.tools.map((t) => landmarkTool(t, access)) as ToolPack['tools'],
     domainRules: landmarkDomainRules(manifest),
     allowedTools: (ctx, channel, signal) => access.allowedTools(ctx, channel, signal),
+    userContext: (ctx, channel, signal) => projects.block(ctx, channel, signal),
   }
 }
 
@@ -95,5 +98,15 @@ export {
   parseManifest,
   schemaProblem,
 } from './manifest.js'
+export {
+  MAX_CONTEXT_CHARS,
+  MAX_CONTEXT_PROJECTS,
+  PROJECT_PROBES,
+  PROJECTS_CACHE_MS,
+  PROJECTS_EMPTY_HR,
+  PROJECTS_HEADING_HR,
+  PROJECTS_TIMEOUT_MS,
+  ProjectsContext,
+} from './projects-context.js'
 export { LANDMARK_RULES_HR } from './rules.hr.js'
 export { LandmarkAccessError, subjectOf } from './subject.js'

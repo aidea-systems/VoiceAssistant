@@ -30,9 +30,14 @@ import {
   LANDMARK_VOICE_TOOLS,
   MANIFEST,
   manifestVersion,
+  MAX_CONTEXT_PROJECTS,
   MAX_INPUT_CHARS,
   MAX_RESPONSE_BYTES,
   parseManifest,
+  PROJECT_PROBES,
+  PROJECTS_CACHE_MS,
+  PROJECTS_EMPTY_HR,
+  PROJECTS_HEADING_HR,
   REVIEWED_TOOLS,
   schemaProblem,
   signAssertion,
@@ -663,6 +668,87 @@ describe('@va/tools-landmark', () => {
       ])
       expect(landmark.calls.map((c) => c.assertionProblem)).toEqual([null, null])
       expect(landmark.maxConcurrentToolCalls).toBe(2)
+    },
+  )
+
+  scenario(
+    'L17 the projects block: four searches by vowel as chat with limit 100, one list without duplicates in name order with status, place and id, the rule, cached five minutes per user; nothing to list is said, too many is left out, a failed probe throws its code',
+    async () => {
+      const PROJECTS = [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Funtana',
+          location: 'Funtana,  Istra',
+          status: 'In Progress',
+        },
+        { id: '22222222-2222-4222-8222-222222222222', name: 'Zabok', location: 'Zabok', status: 'Planning' },
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          name: 'Srebrenjak',
+          location: null,
+          status: 'In Progress',
+        },
+      ]
+      landmark.answer('search_projects', (input) => ({
+        projects: PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query).toLowerCase())),
+        count: 0,
+      }))
+      const ctx = await authAs('member')
+      const p = pack()
+      const signal = new AbortController().signal
+      const block = await p.userContext!(ctx, 'phone', signal)
+      expect(block).toBe(
+        `${PROJECTS_HEADING_HR}\nKorisnik ima 3 projekata (naziv — status — mjesto — id): ` +
+          'Funtana — In Progress — Funtana, Istra — 11111111-1111-4111-8111-111111111111; ' +
+          'Srebrenjak — In Progress — 33333333-3333-4333-8333-333333333333; ' +
+          'Zabok — Planning — Zabok — 22222222-2222-4222-8222-222222222222.\n' +
+          'Na pitanje o nekom od ovih projekata odmah pozovite odgovarajući alat s njegovim id-om iz ovog popisa, bez pretraživanja. ' +
+          'Projekt kojeg ovdje nema potražite alatom za pretraživanje. Id nikada ne izgovarajte.',
+      )
+      const probes = toolCalls()
+      expect(probes.map((c) => c.input)).toEqual(PROJECT_PROBES.map((q) => ({ query: q, limit: 100 })))
+      expect(probes.every((c) => c.channel === 'chat')).toBe(true)
+      expect(landmark.maxConcurrentToolCalls).toBe(1)
+      // Cached: no second gathering within the window; gathered again after it.
+      expect(await p.userContext!(ctx, 'voice', signal)).toBe(block)
+      expect(toolCalls()).toHaveLength(4)
+      now = new Date(now.getTime() + PROJECTS_CACHE_MS + 1)
+      landmark.clock = () => now
+      await p.userContext!(ctx, 'voice', signal)
+      expect(toolCalls()).toHaveLength(8)
+
+      // On a call the block sits in the user block and the question is one tool round.
+      anthropic.script(
+        callTools(toolUse('get_project_financial_summary', { project_id: PROJECTS[0]!.id })),
+        answer('Budžet Funtane je oko devetnaest milijuna eura.'),
+      )
+      const run = await runChat(ctx, 'Kako stoji budžet Funtane?', {
+        channel: 'phone',
+        packs: [p],
+        allowlist: ALLOWLIST,
+        allowed: true,
+      })
+      expect(run.sink.toolResults).toHaveLength(1)
+      expect(toolCalls().at(-1)!.tool).toBe('get_project_financial_summary')
+
+      // Nothing to list is said outright; too many is left out; a failed probe throws its code.
+      landmark.answer('search_projects', () => ({ projects: [], count: 0 }))
+      expect(await pack().userContext!(ctx, 'voice', signal)).toBe(PROJECTS_EMPTY_HR)
+      landmark.answer('search_projects', (input) => ({
+        projects: Array.from({ length: MAX_CONTEXT_PROJECTS + 1 }, (_, i) => ({
+          id: `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`,
+          name: `Projekt ${input.query} ${i}`,
+          location: null,
+          status: 'Planning',
+        })),
+        count: 0,
+      }))
+      expect(await pack().userContext!(ctx, 'voice', signal)).toBeNull()
+      landmark.fault((c) => c.route === 'tool', { status: 500, code: 'internal_error' })
+      await expect(pack().userContext!(ctx, 'voice', signal)).rejects.toThrow(
+        /projects context failed: landmark_unavailable/,
+      )
+      for (const l of landmarkLogs()) expect(l.line).not.toContain('Funtana')
     },
   )
 })
