@@ -1,0 +1,11 @@
+# Landmark questions for the bench (Part 14): run with BENCH_QUESTIONS=bench/questions.landmark.hr.txt
+# against LandmarkDev, signed in as the mapped Director. Project and subcontractor names are the
+# dev project's; change them if the data changes. <!-- needs native review -->
+l01 | Kako stoji budžet Funtane?
+l02 | Koliko je ukupno neplaćenih računa?
+l03 | Koji ugovori su aktivni na projektu Funtana?
+l04 | Koje faze ima projekt Srebrenjak?
+l05 | Koje klasifikacije troškova postoje?
+l06 | Koji projekti su u tijeku?
+l07 | Gdje u aplikaciji postavljam TIC?
+l08 | Koliko smo potrošili na zemljište na Funtani?

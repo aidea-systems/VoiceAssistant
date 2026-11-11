@@ -23,6 +23,7 @@ import { type AllowedTools, authenticateToken, type AuthContext, channelSettings
 
 import { type VoiceDeps } from '../src/config.js'
 import { createMetrics } from '../src/metrics.js'
+import { landmarkConfig } from '../src/env.js'
 import { createRegistry } from '../src/tools.js'
 import { runVoiceTurn, type VoiceTurnResult } from '../src/turn.js'
 import { warm } from '../src/warm.js'
@@ -45,7 +46,11 @@ interface Question {
 }
 
 function questions(): Question[] {
-  return readFileSync(join(HERE, '..', 'bench', 'questions.hr.txt'), 'utf8')
+  // Another set with BENCH_QUESTIONS (a path relative to apps/voice): the Landmark questions, say.
+  return readFileSync(
+    join(HERE, '..', process.env.BENCH_QUESTIONS ?? join('bench', 'questions.hr.txt')),
+    'utf8',
+  )
     .split(/\r?\n/)
     .map((l) => l.replace(/^#.*$/, '').trim())
     .filter(Boolean)
@@ -166,7 +171,14 @@ async function main(): Promise<void> {
   const ctx = await signIn()
   const deps: VoiceDeps = {
     anthropic: new Anthropic({ apiKey: env('ANTHROPIC_API_KEY') }),
-    registry: createRegistry(),
+    // The Landmark pack joins when the key file carries its two variables, as in the worker.
+    registry: createRegistry(
+      null,
+      landmarkConfig({
+        LANDMARK_API_URL: process.env.LANDMARK_API_URL,
+        LANDMARK_ASSISTANT_SECRET: process.env.LANDMARK_ASSISTANT_SECRET,
+      }),
+    ),
     channel: 'voice',
     settings: channelSettings('voice', process.env),
     clock: () => new Date(),

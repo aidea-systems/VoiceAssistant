@@ -379,6 +379,9 @@ configured Supabase project: `bench/questions.hr.txt` (ten product-neutral quest
 pack answers, plus two small-talk lines) × N repeats, each on a fresh single-turn conversation,
 through the same `runVoiceTurn` as the worker, with the packs' per-user context read once as
 the worker reads it per call. It opens a voice session of its own and deletes it at the end.
+`BENCH_QUESTIONS=bench/questions.landmark.hr.txt` runs the Landmark set instead (Part 14; the
+pack joins the bench's registry when the key file carries `LANDMARK_API_URL` and
+`LANDMARK_ASSISTANT_SECRET`, and the bench user must be the mapped Director).
 `first` is the first spoken text, the early filler included once `FILLER_AFTER_MS` is on;
 `answer` is the first text of the answer itself, the figure a filler cannot move. Needs `SUPABASE_*`, `ANTHROPIC_API_KEY`, `VA_BENCH_EMAIL`, `VA_BENCH_PASSWORD`;
 `AI_VOICE_MODEL` / `AI_VOICE_EFFORT` to compare models; `LABEL` tags the rows.
