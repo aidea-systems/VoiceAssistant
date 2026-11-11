@@ -93,7 +93,9 @@ lists the caller's projects: `## Projekti u Landmarku`, then name, status, place
 project, then a rule to call the tool with that id at once and never speak it (`L17`, `W48`).
 Landmark has no list endpoint yet, so the list is gathered as the model did it in chat, one
 `search_projects` per vowel (a, e, i, o) as `chat` with limit 100, through the per-user queue,
-about three seconds, and kept for five minutes per user; a project whose name has no vowel is
+about three seconds, plus Landmark's cost classifications as one line (name and id, so a cost
+question needs no round to resolve the id; a failed read costs that line only), and kept for
+five minutes per user; a project whose name has no vowel is
 searched as before. Nothing to list is said outright; more than 40 projects, or more than
 3,000 characters, leaves the block out and the model searches; a failed probe is logged by the
 registry and costs the block, not the call. Measured need: without it every spoken project

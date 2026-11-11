@@ -34,6 +34,13 @@ const PROJECTS_RULE_HR =
   'Na pitanje o nekom od ovih projekata odmah pozovite odgovarajući alat s njegovim id-om iz ovog popisa, bez pretraživanja. ' +
   'Projekt kojeg ovdje nema potražite alatom za pretraživanje. Id nikada ne izgovarajte.'
 
+/** Landmark's cost classifications: a short fixed list, listed with the projects so a cost
+ * question ("koliko smo potrošili na zemljište") needs no round to resolve the id. */
+export const MAX_CONTEXT_CLASSIFICATIONS = 30
+const classificationSchema = z.object({ id: z.union([z.number(), z.string()]), name: z.string() })
+const CLASSIFICATIONS_RULE_HR =
+  'Za pitanje o trošku po klasifikaciji pozovite alat za ugovore s id-om klasifikacije iz ovog popisa.'
+
 const projectSchema = z.object({
   id: z.uuid(),
   name: z.string(),
@@ -72,6 +79,7 @@ export class ProjectsContext {
 
   private async gather(ctx: AuthContext, signal: AbortSignal): Promise<string | null> {
     const byId = new Map<string, Project>()
+    const classifications = await this.classifications(ctx, signal)
     for (const probe of PROJECT_PROBES) {
       const result = await this.access.call(
         ctx,
@@ -93,6 +101,38 @@ export class ProjectsContext {
       .map((p) => [field(p.name), field(p.status), field(p.location), p.id].filter(Boolean).join(' — '))
       .join('; ')
     if (items.length > MAX_CONTEXT_CHARS) return null
-    return `${PROJECTS_HEADING_HR}\nKorisnik ima ${projects.length} projekata (naziv — status — mjesto — id): ${items}.\n${PROJECTS_RULE_HR}`
+    const lines = [
+      PROJECTS_HEADING_HR,
+      `Korisnik ima ${projects.length} projekata (naziv — status — mjesto — id): ${items}.`,
+      PROJECTS_RULE_HR,
+    ]
+    if (classifications)
+      lines.push(`Klasifikacije troškova (naziv — id): ${classifications}.`, CLASSIFICATIONS_RULE_HR)
+    return lines.join('\n')
+  }
+
+  /** The classifications as one line, or null when the read failed or the list is too long (the
+   * projects are listed either way; the model fetches the classifications as before). */
+  private async classifications(ctx: AuthContext, signal: AbortSignal): Promise<string | null> {
+    const result = await this.access.call(
+      ctx,
+      'list_cost_classifications',
+      {},
+      'chat',
+      signal,
+      'projects:classifications',
+    )
+    if (isLandmarkFailure(result) || result === null || typeof result !== 'object') return null
+    // The list sits under some key of the answer: the first array of { id, name } objects.
+    const list = Object.values(result as Record<string, unknown>).find(
+      (v): v is unknown[] => Array.isArray(v) && v.length > 0 && classificationSchema.safeParse(v[0]).success,
+    )
+    if (!list) return null
+    const parsed = list
+      .map((c) => classificationSchema.safeParse(c))
+      .filter((r) => r.success)
+      .map((r) => r.data)
+    if (parsed.length === 0 || parsed.length > MAX_CONTEXT_CLASSIFICATIONS) return null
+    return parsed.map((c) => `${field(c.name)} — ${c.id}`).join('; ')
   }
 }

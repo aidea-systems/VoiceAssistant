@@ -693,6 +693,13 @@ describe('@va/tools-landmark', () => {
         projects: PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query).toLowerCase())),
         count: 0,
       }))
+      landmark.answer('list_cost_classifications', () => ({
+        classifications: [
+          { id: 1, name: 'Zemljište', is_active: true },
+          { id: 2, name: 'Priprema i  razvoj', is_active: true },
+        ],
+        count: 2,
+      }))
       const ctx = await authAs('member')
       const p = pack()
       const signal = new AbortController().signal
@@ -703,19 +710,31 @@ describe('@va/tools-landmark', () => {
           'Srebrenjak — In Progress — 33333333-3333-4333-8333-333333333333; ' +
           'Zabok — Planning — Zabok — 22222222-2222-4222-8222-222222222222.\n' +
           'Na pitanje o nekom od ovih projekata odmah pozovite odgovarajući alat s njegovim id-om iz ovog popisa, bez pretraživanja. ' +
-          'Projekt kojeg ovdje nema potražite alatom za pretraživanje. Id nikada ne izgovarajte.',
+          'Projekt kojeg ovdje nema potražite alatom za pretraživanje. Id nikada ne izgovarajte.\n' +
+          'Klasifikacije troškova (naziv — id): Zemljište — 1; Priprema i razvoj — 2.\n' +
+          'Za pitanje o trošku po klasifikaciji pozovite alat za ugovore s id-om klasifikacije iz ovog popisa.',
       )
       const probes = toolCalls()
-      expect(probes.map((c) => c.input)).toEqual(PROJECT_PROBES.map((q) => ({ query: q, limit: 100 })))
+      expect(probes.map((c) => c.input)).toEqual([
+        {},
+        ...PROJECT_PROBES.map((q) => ({ query: q, limit: 100 })),
+      ])
       expect(probes.every((c) => c.channel === 'chat')).toBe(true)
       expect(landmark.maxConcurrentToolCalls).toBe(1)
       // Cached: no second gathering within the window; gathered again after it.
       expect(await p.userContext!(ctx, 'voice', signal)).toBe(block)
-      expect(toolCalls()).toHaveLength(4)
+      expect(toolCalls()).toHaveLength(5)
       now = new Date(now.getTime() + PROJECTS_CACHE_MS + 1)
       landmark.clock = () => now
       await p.userContext!(ctx, 'voice', signal)
-      expect(toolCalls()).toHaveLength(8)
+      expect(toolCalls()).toHaveLength(10)
+      // A failed classifications read costs that line only.
+      landmark.fault((c) => c.tool === 'list_cost_classifications', { status: 500, code: 'internal_error' })
+      now = new Date(now.getTime() + PROJECTS_CACHE_MS + 1)
+      landmark.clock = () => now
+      const without = await p.userContext!(ctx, 'voice', signal)
+      expect(without).toContain('Funtana')
+      expect(without).not.toContain('Klasifikacije troškova')
 
       // On a call the block sits in the user block and the question is one tool round.
       anthropic.script(
@@ -744,7 +763,7 @@ describe('@va/tools-landmark', () => {
         count: 0,
       }))
       expect(await pack().userContext!(ctx, 'voice', signal)).toBeNull()
-      landmark.fault((c) => c.route === 'tool', { status: 500, code: 'internal_error' })
+      landmark.fault((c) => c.tool === 'search_projects', { status: 500, code: 'internal_error' })
       await expect(pack().userContext!(ctx, 'voice', signal)).rejects.toThrow(
         /projects context failed: landmark_unavailable/,
       )
