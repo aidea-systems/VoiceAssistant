@@ -397,9 +397,11 @@ and to the loop (`LoopConfig.allowed`), which applies it at dispatch (`E39`, inv
 name, channel, allowed?)` resolves a name through the same filter (undefined for unknown and
 forbidden alike; `refusalReason` says which: `unknown_tool`, `not_permitted_for_role`,
 `not_permitted_on_channel`, `not_permitted_for_user`); `anthropicTools(ctx, channel, allowed?)`
-is the request's `tools` array, sorted, `strict: true` on every tool, the last one carrying
-`cache_control`, memoised per role, channel and restriction (a restriction takes one of a few
-values: the roles of the system behind the pack).
+is the request's `tools` array, sorted, `strict: true` on at most `MAX_STRICT_TOOLS` (20, the
+API's limit per request, met on chat once the Landmark pack joined: the confirmed writes keep
+it first, then the reads by name, and the rest rely on zod at dispatch alone, `T13`), the last
+one carrying `cache_control`, memoised per role, channel and restriction (a restriction takes
+one of a few values: the roles of the system behind the pack).
 
 `toAnthropicTool(def)` derives the JSON Schema from zod (`io: 'input'`, so optional and
 defaulted fields are optional for the model and zod fills the defaults at dispatch), or takes

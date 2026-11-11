@@ -61,6 +61,6 @@ export {
 export type { SpokenEnd, SpokenSinkOptions } from './sinks/spoken.js'
 export { defineTool } from './tools/define.js'
 export type { ToolDefinition, ToolHandlerExtras, ToolPack } from './tools/define.js'
-export { ToolRegistry } from './tools/registry.js'
+export { MAX_STRICT_TOOLS, ToolRegistry } from './tools/registry.js'
 export type { AllowedTools, ChannelAllowlist, RefusalReason } from './tools/registry.js'
 export { toAnthropicTool } from './tools/schema.js'
