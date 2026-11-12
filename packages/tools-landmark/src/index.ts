@@ -49,7 +49,7 @@ export function createLandmarkPack(config: LandmarkPackConfig): ToolPack {
     ...(config.fetch ? { fetch: config.fetch } : {}),
     ...(config.clock ? { clock: config.clock } : {}),
   })
-  const projects = new ProjectsContext(access, config.clock ?? (() => new Date()))
+  const projects = new ProjectsContext(access, config.clock ?? (() => new Date()), manifest)
   return {
     name: LANDMARK_PACK_NAME,
     tools: manifest.tools.map((t) => landmarkTool(t, access)) as ToolPack['tools'],

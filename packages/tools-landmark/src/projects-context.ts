@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 import { isLandmarkFailure, type LandmarkAccess } from './access.js'
 import { clipText } from './clamp.js'
+import type { LandmarkManifest } from './manifest.js'
 
 /** The vowels most Croatian names contain; a project whose name has none is searched as before. */
 export const PROJECT_PROBES = ['a', 'e', 'i', 'o'] as const
@@ -59,10 +60,25 @@ function field(text: string | null | undefined): string {
 export class ProjectsContext {
   private readonly cache = new Map<string, { block: string | null; expiresAt: number }>()
 
+  /** One `search_projects` without a query lists every project the caller may see, once
+   * Landmark's manifest says the query is optional (its latency work of 2026-11-12); until the
+   * snapshot says so, the vowel probes. */
+  private readonly listsAll: boolean
+
   constructor(
     private readonly access: LandmarkAccess,
     private readonly clock: () => Date,
-  ) {}
+    manifest: LandmarkManifest,
+  ) {
+    const search = manifest.tools.find((t) => t.name === 'search_projects')
+    const required = (search?.input_schema.required as string[] | undefined) ?? []
+    this.listsAll = search !== undefined && !required.includes('query')
+  }
+
+  /** The reads the block makes for the projects, for the tests and the doc. */
+  get probes(): readonly Record<string, unknown>[] {
+    return this.listsAll ? [{ limit: 100 }] : PROJECT_PROBES.map((query) => ({ query, limit: 100 }))
+  }
 
   /** The block for this caller, `null` when there is nothing to list or too much. Throws when a
    * probe fails or the deadline passes (the registry logs and skips it). */
@@ -80,14 +96,14 @@ export class ProjectsContext {
   private async gather(ctx: AuthContext, signal: AbortSignal): Promise<string | null> {
     const byId = new Map<string, Project>()
     const classifications = await this.classifications(ctx, signal)
-    for (const probe of PROJECT_PROBES) {
+    for (const input of this.probes) {
       const result = await this.access.call(
         ctx,
         'search_projects',
-        { query: probe, limit: 100 },
+        input,
         'chat',
         signal,
-        `projects:${probe}`,
+        `projects:${String(input.query ?? 'all')}`,
       )
       if (isLandmarkFailure(result)) throw new Error(`projects context failed: ${result.error}`)
       const parsed = answerSchema.safeParse(result)

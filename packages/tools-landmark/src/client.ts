@@ -52,9 +52,25 @@ export type Me = z.infer<typeof meSchema>
 /** What `dispatchTool` returned on Landmark's side: the handler's data, or its own refusal. */
 export type ToolAnswer = { data: unknown } | { error: string }
 
-const answerSchema = z.object({
-  data: z.union([z.object({ data: z.unknown() }).strict(), z.object({ error: z.string() }).strict()]),
-})
+const answerSchema = z.object({ data: z.unknown() })
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+}
+
+/** The handlers answer `{ data }` or `{ error }`; `search_help` answers its object bare
+ * (`{ markdown, matches }`), which is data too. Anything else is not a handler's answer. */
+function unwrap(body: unknown): ToolAnswer | null {
+  const inner = (body as { data?: unknown }).data
+  if (inner === undefined) return null
+  if (isObject(inner)) {
+    const keys = Object.keys(inner)
+    if (keys.length === 1 && keys[0] === 'error' && typeof inner.error === 'string')
+      return { error: inner.error }
+    if (keys.length === 1 && keys[0] === 'data') return { data: inner.data }
+  }
+  return { data: inner }
+}
 
 /** Ids for the log line; the pack passes the user and the request. */
 export interface LogIds {
@@ -155,8 +171,9 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
         ...ids,
       })
       const parsed = answerSchema.safeParse(json)
-      if (!parsed.success) throw new LandmarkError('bad_response', 200, null)
-      return parsed.data.data
+      const answer = parsed.success ? unwrap(parsed.data) : null
+      if (!answer) throw new LandmarkError('bad_response', 200, null)
+      return answer
     },
   }
 }

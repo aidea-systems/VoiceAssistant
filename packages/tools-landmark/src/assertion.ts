@@ -22,7 +22,14 @@ const b64url = (text: string): string => Buffer.from(text, 'utf8').toString('bas
 /** The claims a request carries, for `now`. */
 export function assertionClaims(sub: string, now: Date): AssertionClaims {
   const iat = Math.floor(now.getTime() / 1000)
-  return { iss: ASSERTION_ISSUER, aud: ASSERTION_AUDIENCE, sub, iat, exp: iat + ASSERTION_TTL_S, jti: randomUUID() }
+  return {
+    iss: ASSERTION_ISSUER,
+    aud: ASSERTION_AUDIENCE,
+    sub,
+    iat,
+    exp: iat + ASSERTION_TTL_S,
+    jti: randomUUID(),
+  }
 }
 
 export function signAssertion(secret: string, sub: string, now: Date): string {

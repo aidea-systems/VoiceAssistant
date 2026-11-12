@@ -199,9 +199,9 @@ export class FakeLandmark {
       this.inFlight--
     }
     if (isObject(result) && 'error' in result) return json(200, { data: { error: result.error } })
-    return json(200, {
-      data: { data: channel === 'voice' && this.clampOnVoice ? clampForVoice(result) : result },
-    })
+    const data = channel === 'voice' && this.clampOnVoice ? clampForVoice(result) : result
+    // Landmark's search_help is the one handler that does not wrap its result in `data`.
+    return json(200, tool === 'search_help' ? { data } : { data: { data } })
   }
 
   private verify(header: string | null): { ok: true; sub: string } | { ok: false; reason: string } {
