@@ -220,6 +220,8 @@ in-process worker removes the function's cold start (~1.5 s) and the HTTP hop.
 | 2026-11-09 | `88025f0` | baseline for the early filler and the catalogue block                                                        | `claude-sonnet-5-5`, `low` | 1.64 s / 2.80 s                                             | 4.09 s / 7.46 s        | 2.06   | 36  |
 | 2026-11-09 | `14ed3ab` | early filler 700 ms + the catalogue in the user block                                                        | `claude-sonnet-5-5`, `low` | 0.70 s / 0.70 s (the filler); first answer 1.49 s / 2.64 s  | 1.74 s / 2.77 s        | 1.00   | 36  |
 | 2026-11-11 | `e6e61f4` | the Landmark pack on voice, the Landmark question set (`questions.landmark.hr.txt`, one repeat, LandmarkDev) | `claude-sonnet-5-5`, `low` | 0.70 s / 0.71 s (the filler); first answer 7.11 s / 17.45 s | 7.11 s / 17.45 s       | 2.38   | 8   |
+| 2026-11-11 | `349dd45` | the projects block, the demo catalogue off the call, the prompt line (the Landmark set, one repeat)          | `claude-sonnet-5-5`, `low` | 0.70 s / 0.71 s (the filler); first answer 6.51 s / 11.30 s | 6.76 s / 11.30 s       | 2.00   | 8   |
+| 2026-11-11 | `5f252bd` | Haiku 5.5 on the Landmark set, with the classifications in the block (three repeats)                         | `claude-haiku-5-5`, `low`  | 0.70 s / 0.70 s (the filler); first answer 3.28 s / 5.51 s  | 3.35 s / 5.80 s        | 1.79   | 24  |
 
 **The early filler and the catalogue block (2026-11-09).** Two levers from Landmark's tuning
 list, measured together on the local stack, three repeats, the nine seeded items. The early
@@ -250,7 +252,19 @@ cached for a day after that). Two of the levers followed the same day (`feat/lan
 projects as the per-user block (`docs/LANDMARK.md`), the demo catalogue off the spoken allowlist
 when Landmark is on (eighteen tools), a sentence in the voice prompt to pick the tool at once
 (the cache key of the voice prompt changed), and the per-user context deadline raised from 2 s
-to 6 s for the four probes; the bench after is owed. Still to measure: Haiku 5.5 on the phone
+to 6 s for the four probes. The bench after (`349dd45`): the search round is gone (rounds
+2.38 → 2.00; "koji projekti su u tijeku" answered from the block in one round, 2.8 s), the p95
+fell 17.45 → 11.30 s, but the median only 7.11 → 6.51 s, because the first model round of a
+turn that ends in a tool call still takes 4–5 s on Sonnet 5.5: that is the `between_tools`
+thinking before the call, which a prompt line and fewer tools did not move. The cost
+classifications joined the block the same day so a cost question needs no round to resolve
+the id (`l08`, three rounds). Haiku 5.5 on the same set, three repeats (`5f252bd`): first answer p50 3.28 s against 6.51 s,
+p95 5.51 s against 11.30 s, rounds 1.79 (the classifications line let `l05` answer from the
+prompt); the answers kept the spoken shape (three items, amounts rounded in words). The first
+model round before a tool call fell from 4–5 s to 1–2 s. The phone runs on it from the live
+check on (`AI_PHONE_MODEL=claude-haiku-5-5` in the worker's env; the in-app call may follow
+with `AI_VOICE_MODEL`); decision 0005's Sonnet default stands until a native speaker has
+compared the two models' answers on a real call. Still to measure: Haiku 5.5 on the phone
 (`AI_PHONE_MODEL`) and Landmark's own changes (`docs/requests/landmark-latency-request.md`:
 session reuse, a list endpoint, shorter descriptions). `l07` answered "Landmark trenutno nije
 dostupan" after a 200 from `search_help`: to look at in chat, where the tool result is visible

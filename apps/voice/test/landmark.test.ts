@@ -13,6 +13,8 @@ import { anthropic, ask, logs, openCall, scenario } from './harness.js'
 
 const landmark = new FakeLandmark()
 const PROJECT = '11111111-1111-4111-8111-111111111111'
+/** The projects block's reads at the start of a call, not the turn's own calls. */
+const PROBES = new Set(['search_projects', 'list_cost_classifications'])
 const config = () => ({ url: landmark.url, secret: landmark.secret, fetch: landmark.fetch })
 
 describe('the Landmark pack on a call', () => {
@@ -80,7 +82,7 @@ describe('the Landmark pack on a call', () => {
       await call.session.settle()
 
       // The four `search_projects` probes of the projects block come first (W48); then the turn's call.
-      const tool = landmark.calls.find((c) => c.route === 'tool' && c.tool !== 'search_projects')!
+      const tool = landmark.calls.find((c) => c.route === 'tool' && !PROBES.has(c.tool ?? ''))!
       expect(tool).toMatchObject({ tool: 'list_unpaid_invoices', channel: 'voice', sub: USERS.member.email })
       expect(tool.input).toEqual({ project_id: PROJECT, limit: 20 })
       // One /me for the call: the warm-up and the turn share the pack's minute of cache.
@@ -114,7 +116,7 @@ describe('the Landmark pack on a call', () => {
       const names = anthropic.calls[0]!.body.tools!.map((t) => t.name)
       expect(names).toContain('search_projects')
       expect(names).not.toContain('get_invoice_summary')
-      expect(landmark.calls.filter((c) => c.route === 'tool' && c.tool !== 'search_projects')).toHaveLength(0)
+      expect(landmark.calls.filter((c) => c.route === 'tool' && !PROBES.has(c.tool ?? ''))).toHaveLength(0)
       expect(
         logs.some(
           (l) => l.line.includes('tool refused at dispatch') && l.line.includes('not_permitted_for_user'),
@@ -155,6 +157,7 @@ describe('the Landmark pack on a call', () => {
       expect(system[1]!.text).toContain(`Funtana — In Progress — Funtana — ${PROJECT}`)
       expect(system[1]!.text).not.toContain('## Katalog')
       expect(landmark.calls.filter((c) => c.route === 'tool').map((c) => c.tool)).toEqual([
+        'list_cost_classifications',
         'search_projects',
         'search_projects',
         'search_projects',

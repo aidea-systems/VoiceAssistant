@@ -6,15 +6,18 @@ The company pack (`packages/tools-landmark`) and what it needs from Landmark's s
 
 ## Open
 
-### LM-2 · Low · `search_help` on voice answered "Landmark trenutno nije dostupan" after a 200
+### LM-2 · Low · `search_help` through the function answers a handler error on LandmarkDev
 
-- **Check:** Confirmed once (`l07` in the bench of 2026-11-11)
-- **Where:** `packages/tools-landmark/src/access.ts` (`call`), Landmark's `search_help` on
-  voice (its answer is one markdown string clipped to 200 characters, Landmark `COLLAB-16`)
-- **What happens:** the caller hears that Landmark is down although it answered
-- **Fix direction:** ask the same in chat, where the tool result is visible; if the data is a
-  bare string or null, give the model an object (`{ articles: … }` or `{ error }`) and a rule
-  for an empty help answer
+- **Check:** Confirmed (chat, 2026-11-12: the tool row is marked as an error; the bench logged
+  the call as 200, so the function answered the handler's own `{ error }`)
+- **Where:** Landmark's `search_help` handler as `assistant-api` calls it (`extras.helpSearch`
+  with no route; the help index in the function's bundle); not the pack, which passes the
+  refusal through as it does every handler error
+- **What happens:** every help question is answered as "baza pomoći nije dostupna" on chat and
+  on a call
+- **Fix direction:** Landmark's side: read the handler's error text in the function's log for
+  one such call (the assistant never logs it), and fix the handler's inputs or the index in
+  the function; noted in `docs/requests/landmark-latency-request.md`
 
 ### LM-3 · Medium · The first model round with the twenty spoken tools takes 3.6–5.4 s
 

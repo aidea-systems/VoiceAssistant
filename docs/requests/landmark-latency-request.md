@@ -99,3 +99,11 @@ Tests: `/manifest` is stable across two calls (the version changes once, with th
 When they are deployed to LandmarkDev, send the assistant side the new manifest version and, for
 2, the tool's name if it is new. The assistant re-pulls the manifest, re-runs its bench and records
 the numbers.
+
+## Also seen: `search_help` refuses through the function
+
+On LandmarkDev every `search_help` call through `assistant-api` comes back `200` with the
+handler's own `{ error }`, so the assistant tells the user the help base is unavailable, in chat
+and on a call alike (2026-11-12). The data tools on the same path work. The assistant never logs
+a handler's text; the function's own log for one such call shows it. Likely the help index in
+the function's bundle or the `helpSearch` context the function hands the handler.
