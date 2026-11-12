@@ -6,18 +6,14 @@ The company pack (`packages/tools-landmark`) and what it needs from Landmark's s
 
 ## Open
 
-### LM-3 · Medium · The first model round with the twenty spoken tools takes 3.6–5.4 s
-
-- **Check:** Confirmed (the Landmark bench of 2026-11-11: `l02`–`l05`, `l07`, `l08`)
-- **Where:** the voice prompt with Landmark's rules, twenty tools on the spoken allowlist,
-  `between_tools` thinking on `claude-sonnet-5-5`
-- **What happens:** the caller waits four to five seconds before the first tool runs, against
-  about one second before the pack
-- **Fix direction:** measure, with the Landmark set, (a) `AI_PHONE_MODEL=claude-haiku-5-5`,
-  (b) the demo pack off the spoken allowlist when Landmark is registered (seventeen tools),
-  (c) shorter descriptions in the manifest (an ask to Landmark); keep what the bench justifies
-
 ## Resolved
+
+### LM-3 · Medium · The first model round with the twenty spoken tools took 3.6–5.4 s (2026-11-12)
+
+- Measured levers (`docs/VOICE.md`): the demo pack off the call and a prompt line moved
+  nothing; Haiku 5.5 on the phone halved the first answer (p50 6.51 → 3.28 s); Landmark's
+  shorter descriptions, session reuse and listing call brought it to 2.65 s, p95 4.31 s.
+  Sonnet stays the code default (decision 0005) until a native speaker compares the answers.
 
 ### LM-4 · Low · The per-user call queue dropped once Landmark reused sessions (2026-11-12)
 
