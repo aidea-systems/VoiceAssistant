@@ -676,7 +676,7 @@ describe('@va/tools-landmark', () => {
   )
 
   scenario(
-    'L17 the projects block: four searches by vowel as chat with limit 100, one list without duplicates in name order with status, place and id, the rule, cached five minutes per user; nothing to list is said, too many is left out, a failed probe throws its code',
+    'L17 the projects block: one listing call as chat with limit 100 (the snapshot makes the query optional), one list without duplicates in name order with status, place and id, the rule, cached five minutes per user; nothing to list is said, too many is left out, a failed probe throws its code',
     async () => {
       const PROJECTS = [
         {
@@ -694,7 +694,10 @@ describe('@va/tools-landmark', () => {
         },
       ]
       landmark.answer('search_projects', (input) => ({
-        projects: PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query).toLowerCase())),
+        projects:
+          input.query === undefined
+            ? PROJECTS
+            : PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query).toLowerCase())),
         count: 0,
       }))
       landmark.answer('list_cost_classifications', () => ({
@@ -719,19 +722,16 @@ describe('@va/tools-landmark', () => {
           'Za pitanje o trošku po klasifikaciji pozovite alat za ugovore s id-om klasifikacije iz ovog popisa.',
       )
       const probes = toolCalls()
-      expect(probes.map((c) => c.input)).toEqual([
-        {},
-        ...PROJECT_PROBES.map((q) => ({ query: q, limit: 100 })),
-      ])
+      expect(probes.map((c) => c.input)).toEqual([{}, { limit: 100 }])
       expect(probes.every((c) => c.channel === 'chat')).toBe(true)
       expect(landmark.maxConcurrentToolCalls).toBe(1)
       // Cached: no second gathering within the window; gathered again after it.
       expect(await p.userContext!(ctx, 'voice', signal)).toBe(block)
-      expect(toolCalls()).toHaveLength(5)
+      expect(toolCalls()).toHaveLength(2)
       now = new Date(now.getTime() + PROJECTS_CACHE_MS + 1)
       landmark.clock = () => now
       await p.userContext!(ctx, 'voice', signal)
-      expect(toolCalls()).toHaveLength(10)
+      expect(toolCalls()).toHaveLength(4)
       // A failed classifications read costs that line only.
       landmark.fault((c) => c.tool === 'list_cost_classifications', { status: 500, code: 'internal_error' })
       now = new Date(now.getTime() + PROJECTS_CACHE_MS + 1)
@@ -809,7 +809,7 @@ describe('@va/tools-landmark', () => {
   )
 
   scenario(
-    'L17b once the snapshot says search_projects takes no query, the projects block is one listing call instead of the four probes',
+    'L17b against a snapshot whose search_projects still requires a query, the projects block makes the four vowel probes',
     async () => {
       const search = MANIFEST.tools.find((t) => t.name === 'search_projects')!
       const tools = MANIFEST.tools.map((t) =>
@@ -820,9 +820,9 @@ describe('@va/tools-landmark', () => {
                 ...t.input_schema,
                 properties: {
                   ...(t.input_schema.properties as Record<string, unknown>),
-                  query: { type: 'string', description: 'Substring; omit to list every project.' },
+                  query: { type: 'string', description: 'Substring to match.', minLength: 1 },
                 },
-                required: [],
+                required: ['query'],
               },
             }
           : t,
@@ -833,10 +833,9 @@ describe('@va/tools-landmark', () => {
       listing.clock = () => now
       listing.mapUser(USERS.member.email, { role: 'Director' })
       listing.answer('search_projects', (input) => ({
-        projects:
-          input.query === undefined
-            ? [SAVSKA, { ...SAVSKA, id: '44444444-4444-4444-8444-444444444444', name: 'Zabok' }]
-            : [],
+        projects: [SAVSKA, { ...SAVSKA, id: '44444444-4444-4444-8444-444444444444', name: 'Zabok' }].filter(
+          (p) => p.name.toLowerCase().includes(String(input.query)),
+        ),
         count: 2,
       }))
       listing.answer('list_cost_classifications', () => ({ classifications: [{ id: 1, name: 'Zemljište' }] }))
@@ -854,9 +853,9 @@ describe('@va/tools-landmark', () => {
       const reads = listing.calls.filter((c) => c.route === 'tool').map((c) => [c.tool, c.input])
       expect(reads).toEqual([
         ['list_cost_classifications', {}],
-        ['search_projects', { limit: 100 }],
+        ...PROJECT_PROBES.map((q) => ['search_projects', { query: q, limit: 100 }]),
       ])
-      expect((search.input_schema.required as string[]).includes('query')).toBe(true)
+      expect((search.input_schema.required as string[]).includes('query')).toBe(false)
     },
   )
 })

@@ -140,7 +140,10 @@ describe('the Landmark pack on a call', () => {
         },
       ]
       landmark.answer('search_projects', (input) => ({
-        projects: PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query))),
+        projects:
+          input.query === undefined
+            ? PROJECTS
+            : PROJECTS.filter((p) => p.name.toLowerCase().includes(String(input.query))),
         count: 0,
       }))
       landmark.answer('get_project_financial_summary', () => ({ budget: 19300000, contracted: 0, paid: 0 }))
@@ -158,9 +161,6 @@ describe('the Landmark pack on a call', () => {
       expect(system[1]!.text).not.toContain('## Katalog')
       expect(landmark.calls.filter((c) => c.route === 'tool').map((c) => c.tool)).toEqual([
         'list_cost_classifications',
-        'search_projects',
-        'search_projects',
-        'search_projects',
         'search_projects',
         'get_project_financial_summary',
       ])

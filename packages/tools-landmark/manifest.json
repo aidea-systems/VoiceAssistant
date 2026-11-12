@@ -1,16 +1,15 @@
 {
-  "version": "ad40be62df6edae8605e55bd4377ffb40bb902396da546e87463a839e839de5b",
+  "version": "6a9b191f7ce7b27c7ae8c0815ca98ffc27236a221663f399cf02b6b7d14794af",
   "tools": [
     {
       "name": "search_projects",
-      "description": "Search for construction projects by name using a case-insensitive substring match. Use this when the user mentions a project by name and you need its UUID for a subsequent tool call. Returns up to `limit` matches with id, name, location, and status. Does NOT search retail projects.",
+      "description": "Construction projects the caller can see: id, name, location, status. Omit `query` to list them all in name order (up to `limit`); give part of a name to find one. Call it first when you need a project_id. Retail projects are not included.",
       "input_schema": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
-            "description": "Substring to match against project name. Case-insensitive.",
-            "minLength": 1
+            "description": "Substring to match against project name. Case-insensitive. Omit or leave empty to list every project you can see."
           },
           "limit": {
             "type": "integer",
@@ -20,7 +19,7 @@
             "default": 20
           }
         },
-        "required": ["query"],
+        "required": [],
         "additionalProperties": false
       },
       "roles": ["Director", "Accounting", "Sales", "Supervision", "Investment"],
@@ -28,7 +27,7 @@
     },
     {
       "name": "get_project_details",
-      "description": "Fetch full details for a single project: name, location, start/end dates, budget, status, and counts of phases, contracts, and milestones. Use this after `search_projects` has returned a project_id, when the user asks \"tell me about project X\" or wants a status overview.",
+      "description": "One project's details: name, location, dates, budget, status, and counts of phases, contracts and milestones. Use for \"tell me about project X\" or a status overview. For money questions use `get_project_financial_summary`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -46,7 +45,7 @@
     },
     {
       "name": "list_project_phases",
-      "description": "List all phases for a given project, ordered by phase_number. Each phase includes its name, start/end dates, status, and the `budget_allocated` figure. `budget_allocated` is derived from the project TIC, not typed by anyone; it reads 0 for a project that has no TIC, which means \"not planned yet\", not \"planned to be zero\". It is null when the TIC is not split by phase and the project has several phases: the project budget covers them together, so do not divide it between the phases or attribute it to any one of them. A phase is a TIME division of the project (Faza 1, Faza 2). It is NOT a cost category: most projects have only one phase, so per-phase figures are effectively whole-project figures. For \"how much did we spend on land / on preparation\", use `list_cost_classifications` and filter contracts by classification_id instead. Note: the `budget_used` column on the phase row is NOT trigger-maintained and may be stale; if the user wants accurate spend numbers, call `get_project_financial_summary` instead.",
+      "description": "A project's phases (time divisions such as Faza 1, Faza 2) in order, with dates, status and `budget_allocated`. Use when the user asks about phases. Not for cost categories (use `list_cost_classifications` and `list_contracts`) or spend (use `get_project_financial_summary`).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -64,7 +63,7 @@
     },
     {
       "name": "search_subcontractors",
-      "description": "Search subcontractors (the construction-side suppliers) by name using a case-insensitive substring match. Use this when the user references a subcontractor by name and you need their UUID. Note: in this codebase, `accounting_invoices.supplier_id` points to subcontractors — there is no separate \"suppliers\" table. Returns id, name, contact, and active_contracts_count.",
+      "description": "Subcontractors (izvođači, the construction-side suppliers) by name: id, name, contact, active_contracts_count. Call it when the user names a subcontractor and you need its subcontractor_id for another tool.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -89,7 +88,7 @@
     },
     {
       "name": "list_cost_classifications",
-      "description": "List the global cost classifications (stavke troškovnika) used to group contracts: \"Zemljište\", \"Priprema i razvoj\", \"Izgradnja i uređenje\", \"Opremanje\", \"Kontrola\", \"Financiranje i nadzor\", \"Nepredviđeni troškovi\", plus any the company added. Call this to resolve a cost category the user named into a classification_id, then pass that to `list_contracts`.",
+      "description": "The cost classifications (stavke troškovnika: Zemljište, Priprema i razvoj, Izgradnja i uređenje…) with their ids. Call it to turn a cost category the user named into a classification_id for `list_contracts`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -105,7 +104,7 @@
     },
     {
       "name": "list_contracts",
-      "description": "List construction contracts with optional filters by project_id, phase_id, classification_id, subcontractor_id, and status. Cost classification is the axis that identifies WHAT a cost is (land, preparation, construction...); phase is only WHEN. Use this when the user asks about active or completed contracts, or wants to see work agreements with a particular subcontractor. The `budget_realized` field is automatically maintained from payments and is the authoritative spend figure for a contract.",
+      "description": "Construction contracts, filtered by project, phase, cost classification, subcontractor or status: amounts, `budget_realized` (the authoritative spend), dates, status. Use for contract questions, and for spend on a cost category (filter by classification_id, not by phase).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -149,7 +148,7 @@
     },
     {
       "name": "get_subcontractor_payment_status",
-      "description": "Compute the headline payment status for a single subcontractor: total contracted amount, total invoiced amount, total paid, and outstanding balance. Use this when the user asks \"is X paid up?\" or \"how much do we still owe X?\". Construction-side only — retail invoices and retail suppliers are not aggregated here.",
+      "description": "One subcontractor's totals: contracted, invoiced, paid and still owed. Use for \"is X paid up?\" or \"how much do we still owe X?\". For the individual payments use `list_payments_for_subcontractor`. Construction only, not retail.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -167,7 +166,7 @@
     },
     {
       "name": "list_unpaid_invoices",
-      "description": "List invoices with status UNPAID or PARTIALLY_PAID, optionally filtered by subcontractor_id or project_id. Use this for questions like \"what do we still owe?\" or \"show me overdue invoices on project X\". For Supervision users, RLS will scope results to projects they manage.",
+      "description": "Invoices still UNPAID or PARTIALLY_PAID, optionally for one subcontractor or project, earliest due date first. Use for \"what do we still owe?\" or overdue invoices. For counts and totals across all invoices use `get_invoice_summary`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -197,7 +196,7 @@
     },
     {
       "name": "list_payments_for_subcontractor",
-      "description": "List individual payment records made against invoices belonging to a given subcontractor. Use this when the user wants the payment history for a specific subcontractor, not aggregate totals. Joins through `accounting_invoices.supplier_id`; returns payment_date, amount, payment_method, and the linked invoice number.",
+      "description": "Individual payments on one subcontractor's invoices: date, amount, method and invoice number. Use for a subcontractor's payment history. For the totals use `get_subcontractor_payment_status`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -222,7 +221,7 @@
     },
     {
       "name": "get_invoice_summary",
-      "description": "Aggregate invoice statistics across the whole accounting_invoices table with optional filters by invoice_type, status, company_id, and a free-text search term. Returns filtered_count, filtered_unpaid_sum, and total_unpaid_sum. Use this for \"how many unpaid invoices do we have?\" or \"what is the total outstanding for company X?\". Backed by the `get_invoice_statistics` RPC.",
+      "description": "Counts and sums across all invoices, filtered by type, status, company or a search term: filtered_count, filtered_unpaid_sum, total_unpaid_sum. Use for \"how many unpaid invoices?\" or \"total outstanding for company X\". To list invoices use `list_unpaid_invoices`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -255,7 +254,7 @@
     },
     {
       "name": "get_project_financial_summary",
-      "description": "Compute a project's financial rollup: total project budget, sum of contract amounts, sum of contract `budget_realized` (paid via invoices), unpaid invoice total, and remaining budget. The budget figure is derived from the project TIC. A project with no TIC has no planned budget at all — say so rather than presenting a stale stored number as the plan, and note that \"remaining budget\" is then meaningless. Use this for questions like \"how is project X doing financially?\" or \"is project X over budget?\". Construction-side only — retail projects are not included.",
+      "description": "One project's money: budget (from its TIC), contracted, paid (`budget_realized`), unpaid invoices and remaining budget. Use for \"how is project X doing?\" or \"are we over budget?\". Without a TIC there is no budget; say so. Construction only, not retail.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -273,13 +272,13 @@
     },
     {
       "name": "search_help",
-      "description": "Pretraži bazu znanja o platformi Cognilion za informacije o stranicama, tijekovima rada, domenskim pojmovima i pristupu po ulogama. Pozovite kada korisnik pita \"kako\", \"gdje\", \"što je\", \"zašto ne vidim\", ili treba pomoć s navigacijom kroz aplikaciju. Vraća do 5 najrelevantnijih unosa iz baze znanja kao markdown. Ne koristite za pretragu konkretnih podataka (projekata, ugovora, plaćanja) — za to postoje drugi alati.",
+      "description": "Searches the Cognilion help base and returns up to 5 matching articles as markdown. Use when the user asks how, where or why in the app (pages, workflows, terms, role access). Not for data such as projects, contracts or payments: other tools fetch those.",
       "input_schema": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
-            "description": "Pitanje korisnika ili ključne riječi za pretragu baze znanja, na hrvatskom ili engleskom.",
+            "description": "The user's question, or keywords to search the help base for, in Croatian or English.",
             "minLength": 1
           }
         },
