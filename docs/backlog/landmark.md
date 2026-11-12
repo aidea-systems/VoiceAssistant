@@ -6,29 +6,20 @@ The company pack (`packages/tools-landmark`) and what it needs from Landmark's s
 
 ## Open
 
-### LM-4 · Low · The per-user call queue can go once Landmark reuses sessions
-
-- **Check:** By design (the queue of 2026-11-11, `access.ts`); Landmark's response of 2026-11-12
-  says minting is single-flight and sessions are reused, so parallel calls of one user are safe
-- **Where:** `packages/tools-landmark/src/access.ts` (`queues`), `L16`
-- **What happens:** parallel tool calls of one user (the model searching with several queries)
-  run one after another, about a second each, for no reason once the new function is on
-  LandmarkDev
-- **Fix direction:** after the deploy is confirmed and the bench shows no `500` on parallel
-  calls, drop the queue and `L16`'s serial assertion (keep the two-user part)
-
-### LM-3 · Medium · The first model round with the twenty spoken tools takes 3.6–5.4 s
-
-- **Check:** Confirmed (the Landmark bench of 2026-11-11: `l02`–`l05`, `l07`, `l08`)
-- **Where:** the voice prompt with Landmark's rules, twenty tools on the spoken allowlist,
-  `between_tools` thinking on `claude-sonnet-5-5`
-- **What happens:** the caller waits four to five seconds before the first tool runs, against
-  about one second before the pack
-- **Fix direction:** measure, with the Landmark set, (a) `AI_PHONE_MODEL=claude-haiku-5-5`,
-  (b) the demo pack off the spoken allowlist when Landmark is registered (seventeen tools),
-  (c) shorter descriptions in the manifest (an ask to Landmark); keep what the bench justifies
-
 ## Resolved
+
+### LM-3 · Medium · The first model round with the twenty spoken tools took 3.6–5.4 s (2026-11-12)
+
+- Measured levers (`docs/VOICE.md`): the demo pack off the call and a prompt line moved
+  nothing; Haiku 5.5 on the phone halved the first answer (p50 6.51 → 3.28 s); Landmark's
+  shorter descriptions, session reuse and listing call brought it to 2.65 s, p95 4.31 s.
+  Sonnet stays the code default (decision 0005) until a native speaker compares the answers.
+
+### LM-4 · Low · The per-user call queue dropped once Landmark reused sessions (2026-11-12)
+
+- Landmark's `assistant-api` on LandmarkDev mints one session per user, single-flight, and
+  reuses it for five minutes; five parallel calls of one user answered 200 in its smoke test.
+  The pack's queue and its serial assertion in `L16` went the same day.
 
 ### LM-2 · Low · `search_help` answered as an outage: our client refused its bare shape (fixed 2026-11-12)
 

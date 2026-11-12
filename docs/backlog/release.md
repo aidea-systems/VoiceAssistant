@@ -87,7 +87,10 @@ three sets of checks) and says how to paste the results back.
       `422 signup_disabled` before the two variables go in); (e) one question per tool from chat and from a call
       against the dev project, the twelve of `docs/LANDMARK.md`, and one as a user Landmark does
       not know (no Landmark tool advertised); (f) `/bench-voice` after, the row in `docs/VOICE.md`
-      (the prompt grew by Landmark's rules). Check: the `[landmark]` request lines carry status
+      (the prompt grew by Landmark's rules). Progress 2026-11-12: (a)–(e) done on chat and the bench
+      (the function deployed 2026-11-11, the latency work 2026-11-12; sign-up off; manifest
+      version `6a9b191f…`; the Director mapped), (f) done (`docs/VOICE.md`, Haiku 5.5, first
+      answer p50 2.65 s); still open: one real phone call on Haiku with a Landmark question. Check: the `[landmark]` request lines carry status
       200 with the tool name, Landmark's `[assistant-api]` lines carry the mapped user id, and
       neither carries an address or a token.
 
