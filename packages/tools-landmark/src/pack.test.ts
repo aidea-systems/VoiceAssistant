@@ -636,7 +636,7 @@ describe('@va/tools-landmark', () => {
   )
 
   scenario(
-    'L16 parallel calls of one user reach Landmark one at a time, in order, each with its own result; two users do not wait for each other',
+    'L16 parallel calls of one user overlap, each with its own result (Landmark reuses the session); two users do not wait for each other',
     async () => {
       landmark.mapUser(USERS.admin.email, { role: 'Director' })
       anthropic.script(
@@ -650,8 +650,12 @@ describe('@va/tools-landmark', () => {
       const ctx = await authAs('member')
       const run = await runChat(ctx, 'x', { packs: [pack()], allowlist: ALLOWLIST })
       expect(run.sink.toolResults.map((r) => r.isError)).toEqual([false, false, false])
-      expect(toolCalls().map((c) => (c.input as { query: string }).query)).toEqual(['Sav', 'Savska', 'Sava'])
-      expect(landmark.maxConcurrentToolCalls).toBe(1)
+      expect(
+        toolCalls()
+          .map((c) => (c.input as { query: string }).query)
+          .sort(),
+      ).toEqual(['Sav', 'Sava', 'Savska'])
+      expect(landmark.maxConcurrentToolCalls).toBe(3)
 
       // Two users share nothing: their calls may overlap.
       landmark.reset()

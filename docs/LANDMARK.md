@@ -66,11 +66,9 @@ and a handler's refusal text is clipped to 200 characters with control character
 
 Each envelope has a sentence in `LANDMARK_RULES_HR` telling the model what to say.
 
-Calls of one user go to Landmark one at a time (`L16`): every call mints that user a magic-link
-session on Landmark's side and GoTrue keeps one pending link per user, so parallel calls (the
-model searching with several queries at once) raced on the first hosted check and the earlier
-links failed at verification as `500 internal_error`. The queue costs parallel calls their
-overlap, about a second each, until Landmark reuses a session per user (its `COLLAB-17`).
+Calls of one user may overlap (`L16`): Landmark mints one session per user and reuses it for
+five minutes (its latency work of 2026-11-12), so the race that made the pack queue them on
+2026-11-11 (one pending magic link per user) is gone.
 
 ## The gate: Landmark's role in our registry
 
