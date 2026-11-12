@@ -102,7 +102,7 @@ beforeEach(() => {
     filtered_unpaid_sum: 12000.5,
     total_unpaid_sum: 40000,
   }))
-  landmark.answer('search_help', () => 'Pomoć: otvorite stranicu TIC.')
+  landmark.answer('search_help', () => ({ markdown: '## TIC\nOtvorite stranicu TIC projekta.', matches: 1 }))
 })
 
 describe('@va/tools-landmark', () => {
@@ -768,6 +768,91 @@ describe('@va/tools-landmark', () => {
         /projects context failed: landmark_unavailable/,
       )
       for (const l of landmarkLogs()) expect(l.line).not.toContain('Funtana')
+    },
+  )
+
+  scenario(
+    'L18 search_help answers its object bare, without the inner data, and reaches the model as that object; on the phone its markdown is clipped here (LM-2)',
+    async () => {
+      const ctx = await authAs('member')
+      landmark.answer('search_help', () => ({
+        markdown: `## TIC\n${'Otvorite stranicu TIC projekta. '.repeat(20)}`,
+        matches: 3,
+      }))
+      anthropic.script(
+        callTools(toolUse('search_help', { query: 'tic' })),
+        answer('TIC se postavlja na stranici TIC.'),
+      )
+      const run = await runChat(ctx, 'Gdje postavljam TIC?', { packs: [pack()], allowlist: ALLOWLIST })
+      expect(run.sink.toolResults[0]!.isError).toBe(false)
+      const got = sentToModel(run, 0) as { markdown: string; matches: number }
+      expect(got.matches).toBe(3)
+      expect(got.markdown.startsWith('## TIC')).toBe(true)
+      expect(got.markdown.length).toBeGreaterThan(300)
+
+      landmark.clampOnVoice = false
+      anthropic.script(callTools(toolUse('search_help', { query: 'tic' })), answer('Na stranici TIC.'))
+      const spoken = await runChat(ctx, 'Gdje postavljam TIC?', {
+        channel: 'phone',
+        packs: [pack()],
+        allowlist: ALLOWLIST,
+      })
+      const heard = sentToModel(spoken, 0) as { markdown: string }
+      expect(heard.markdown).toHaveLength(201)
+      // A handler's `{ error }` and a wrapped `{ data }` are still read as before.
+      expect(landmarkLogs().every((l) => !l.line.includes('bad_response'))).toBe(true)
+    },
+  )
+
+  scenario(
+    'L17b once the snapshot says search_projects takes no query, the projects block is one listing call instead of the four probes',
+    async () => {
+      const search = MANIFEST.tools.find((t) => t.name === 'search_projects')!
+      const tools = MANIFEST.tools.map((t) =>
+        t.name === 'search_projects'
+          ? {
+              ...t,
+              input_schema: {
+                ...t.input_schema,
+                properties: {
+                  ...(t.input_schema.properties as Record<string, unknown>),
+                  query: { type: 'string', description: 'Substring; omit to list every project.' },
+                },
+                required: [],
+              },
+            }
+          : t,
+      )
+      const body = { tools, domain_rules_hr: MANIFEST.domain_rules_hr }
+      const manifest = parseManifest({ version: manifestVersion(body), ...body })
+      const listing = new FakeLandmark(manifest, landmark.url, landmark.secret)
+      listing.clock = () => now
+      listing.mapUser(USERS.member.email, { role: 'Director' })
+      listing.answer('search_projects', (input) => ({
+        projects:
+          input.query === undefined
+            ? [SAVSKA, { ...SAVSKA, id: '44444444-4444-4444-8444-444444444444', name: 'Zabok' }]
+            : [],
+        count: 2,
+      }))
+      listing.answer('list_cost_classifications', () => ({ classifications: [{ id: 1, name: 'Zemljište' }] }))
+      const p = createLandmarkPack({
+        url: listing.url,
+        secret: listing.secret,
+        fetch: listing.fetch,
+        manifest,
+        clock: () => now,
+      })
+      const ctx = await authAs('member')
+      const block = await p.userContext!(ctx, 'phone', new AbortController().signal)
+      expect(block).toContain('Korisnik ima 2 projekata')
+      expect(block).toContain('Zabok')
+      const reads = listing.calls.filter((c) => c.route === 'tool').map((c) => [c.tool, c.input])
+      expect(reads).toEqual([
+        ['list_cost_classifications', {}],
+        ['search_projects', { limit: 100 }],
+      ])
+      expect((search.input_schema.required as string[]).includes('query')).toBe(true)
     },
   )
 })

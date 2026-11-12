@@ -53,15 +53,16 @@ and a handler's refusal text is clipped to 200 characters with control character
 (`L13`). This is the one pack whose spoken output keeps ids, a deviation from the tools rule
 ("voice variants carry no ids") accepted because Landmark's contract needs them to chain calls.
 
-| The model reads                             | When                                                                                                                            |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| the handler's data                          | `200 { data: { data } }`                                                                                                        |
-| `{ error: '<handler text>' }`               | `200 { data: { error } }`: Landmark's handler refused (a project not found, …), as Landmark's own chat model sees it            |
-| `{ error: 'landmark_not_mapped' }`          | `403 not_mapped`: no Landmark user for the address; or the caller may not be signed for (unconfirmed, banned, address mismatch) |
-| `{ error: 'landmark_forbidden' }`           | `403 forbidden_tool`: Landmark's role may not call it on that channel (reached only past the gate)                              |
-| `{ error: 'landmark_bad_request', detail }` | `400`, `404 unknown_tool`, `413`: the snapshot and the function disagree; logged as `manifest drift`, re-pull the manifest      |
-| `{ error: 'landmark_unavailable' }`         | `401 bad_assertion` (the secret or the clock), `429`, `500`, no answer, a wrong shape, a failed GoTrue lookup                   |
-| the engine's own timeout                    | a hung call past the channel's tool timeout (6 s voice, 15 s chat), which covers Landmark's session minting too                 |
+| The model reads                             | When                                                                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| the handler's data                          | `200 { data: { data } }`                                                                                                                        |
+| `{ error: '<handler text>' }`               | `200 { data: { error } }`: Landmark's handler refused (a project not found, …), as Landmark's own chat model sees it                            |
+| the handler's object                        | `200 { data: { markdown, matches } }`: `search_help` answers bare, without the inner `data` (`L18`; read as an outage until 2026-11-12, `LM-2`) |
+| `{ error: 'landmark_not_mapped' }`          | `403 not_mapped`: no Landmark user for the address; or the caller may not be signed for (unconfirmed, banned, address mismatch)                 |
+| `{ error: 'landmark_forbidden' }`           | `403 forbidden_tool`: Landmark's role may not call it on that channel (reached only past the gate)                                              |
+| `{ error: 'landmark_bad_request', detail }` | `400`, `404 unknown_tool`, `413`: the snapshot and the function disagree; logged as `manifest drift`, re-pull the manifest                      |
+| `{ error: 'landmark_unavailable' }`         | `401 bad_assertion` (the secret or the clock), `429`, `500`, no answer, a wrong shape, a failed GoTrue lookup                                   |
+| the engine's own timeout                    | a hung call past the channel's tool timeout (6 s voice, 15 s chat), which covers Landmark's session minting too                                 |
 
 Each envelope has a sentence in `LANDMARK_RULES_HR` telling the model what to say.
 
@@ -91,9 +92,11 @@ Tests: `T11`, `E39`, `L05`–`L07`, `LA01`, `LA02`, `W46`, `W47`.
 On a call the pack's `userContext` (read once while the greeting plays, `CallSession.userContextFor`)
 lists the caller's projects: `## Projekti u Landmarku`, then name, status, place and id per
 project, then a rule to call the tool with that id at once and never speak it (`L17`, `W48`).
-Landmark has no list endpoint yet, so the list is gathered as the model did it in chat, one
+Until Landmark's `search_projects` takes an empty query (built on its side on 2026-11-12,
+deployed with the next manifest), the list is gathered as the model did it in chat, one
 `search_projects` per vowel (a, e, i, o) as `chat` with limit 100, through the per-user queue,
-about three seconds, plus Landmark's cost classifications as one line (name and id, so a cost
+about three seconds; the block reads the snapshot and switches to one listing call the moment
+the manifest's schema no longer requires `query` (`L17b`), plus Landmark's cost classifications as one line (name and id, so a cost
 question needs no round to resolve the id; a failed read costs that line only), and kept for
 five minutes per user; a project whose name has no vowel is
 searched as before. Nothing to list is said outright; more than 40 projects, or more than
