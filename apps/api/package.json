@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@supabase/supabase-js": "2.117.3",
     "@va/core": "workspace:*",
     "@va/db": "workspace:*",
