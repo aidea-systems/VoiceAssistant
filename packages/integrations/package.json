@@ -14,7 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.117.3",
+    "@supabase/supabase-js": "2.118.0",
     "@va/core": "workspace:*",
     "@va/db": "workspace:*"
   }
