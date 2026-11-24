@@ -416,6 +416,24 @@ describe('@va/tools-mail', () => {
   )
 
   scenario(
+    'API-20 seven calendar calls in one round: at most four reach Outlook at once, and every day answers',
+    async () => {
+      graph.concurrency = { limit: 4, holdMs: 20 }
+      const week = ['02', '03', '04', '05', '06', '07', '08'].map((d) => `2026-11-${d}`)
+      anthropic.script(
+        callTools(...week.map((date) => toolUse('list_calendar', { date }))),
+        answer('Ovaj tjedan…'),
+      )
+      const ctx = await authAs('member')
+      const run = await runChat(ctx, 'Što imam ovaj tjedan?', { packs: [pack()], allowlist: ALLOWLIST })
+      expect(week.map((_, i) => sentToModel(run, i).date)).toEqual(week)
+      expect(run.sink.toolResults.every((r) => !r.isError)).toBe(true)
+      expect(graphCalls('/me/calendarView')).toHaveLength(7)
+      expect(graph.maxInFlight).toBeLessThanOrEqual(4)
+    },
+  )
+
+  scenario(
     'Z10 not connected, or not available here: one error envelope each, and no request to Graph',
     async () => {
       access = 'not_connected'

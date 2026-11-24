@@ -4,6 +4,7 @@
 import type { ToolPack } from '@va/core'
 
 import type { MailDeps, MailTokenProvider } from './access.js'
+import { MailboxGate } from './mailbox-gate.js'
 import { MessageRefs } from './refs.js'
 import { MAIL_RULES_HR } from './rules.hr.js'
 import { flagMail } from './tools/flag-mail.js'
@@ -35,6 +36,7 @@ export function createMailPack(config: MailPackConfig): ToolPack {
     fetch: config.fetch,
     refs: new MessageRefs(clock, ...(config.refStart !== undefined ? [config.refStart] : [])),
     clock,
+    gate: new MailboxGate(),
   }
   return {
     name: 'mail',

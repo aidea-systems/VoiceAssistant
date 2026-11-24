@@ -1,5 +1,6 @@
 // A small Microsoft Graph client over `fetch`, no SDK: GET, POST and PATCH against v1.0 with the
-// user's delegated token, `$select`, `Prefer` headers, and one retry after a 429's Retry-After.
+// user's delegated token, `$select`, `Prefer` headers, one retry after a 429's Retry-After, and
+// an optional slot of the mailbox's concurrency per request (`MailboxGate`, API-20).
 // The token comes from the app (`tokenFor` of @va/integrations), so this package never sees a
 // refresh token. Paths are relative to v1.0; an absolute URL is refused so the token can only
 // ever go to Graph. Logs carry the method, the status, Graph's error code and request id;
@@ -33,6 +34,9 @@ export interface GraphClientConfig {
   fetch?: typeof fetch
   baseUrl?: string
   maxRetryAfterMs?: number
+  /** A slot of the mailbox's concurrency (`MailboxGate`), held from the fetch until the body is
+   * read; returns its release. Absent: no limit. */
+  acquire?: (signal?: AbortSignal) => Promise<() => void>
 }
 
 export interface GraphRequestOptions {
@@ -71,26 +75,31 @@ export function createGraphClient(config: GraphClientConfig): GraphClient {
 
     for (let attempt = 0; ; attempt++) {
       headers.Authorization = `Bearer ${await config.token(o.signal)}`
+      const release = config.acquire ? await config.acquire(o.signal) : undefined
       let res: Response
+      let text: string
       try {
-        res = await doFetch(url, {
-          method,
-          headers,
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-          ...(o.signal ? { signal: o.signal } : {}),
-        })
-      } catch (e) {
-        if (o.signal?.aborted) throw e
-        log('warn', TAG, 'graph request failed', { method, status: 0 })
-        throw new GraphError('unavailable', 0, null, null)
+        try {
+          res = await doFetch(url, {
+            method,
+            headers,
+            ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+            ...(o.signal ? { signal: o.signal } : {}),
+          })
+        } catch (e) {
+          if (o.signal?.aborted) throw e
+          log('warn', TAG, 'graph request failed', { method, status: 0 })
+          throw new GraphError('unavailable', 0, null, null)
+        }
+        // 202 (a reply accepted for sending) and 204 come without a body; an error's body is
+        // read only for its code, so a broken one is an empty one.
+        text = res.ok ? await res.text() : await res.text().catch(() => '')
+      } finally {
+        release?.()
       }
-      if (res.ok) {
-        // 202 (a reply accepted for sending) and 204 come without a body.
-        const text = await res.text()
-        return (text ? JSON.parse(text) : undefined) as T
-      }
+      if (res.ok) return (text ? JSON.parse(text) : undefined) as T
       const requestId = res.headers.get('request-id')
-      const json = (await res.json().catch(() => null)) as { error?: { code?: unknown } } | null
+      const json = parseOrNull(text) as { error?: { code?: unknown } } | null
       const code = typeof json?.error?.code === 'string' ? json.error.code : null
       if (res.status === 429 && attempt === 0) {
         const waitMs = retryAfterMs(res.headers.get('Retry-After'))
@@ -114,6 +123,14 @@ export function createGraphClient(config: GraphClientConfig): GraphClient {
     get: (path, options = {}) => request('GET', path, undefined, options),
     post: (path, body, options = {}) => request('POST', path, body, options),
     patch: (path, body, options = {}) => request('PATCH', path, body, options),
+  }
+}
+
+function parseOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
   }
 }
 

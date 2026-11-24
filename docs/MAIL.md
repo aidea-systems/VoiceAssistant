@@ -181,6 +181,15 @@ query parameters and `Prefer` headers (`outlook.timezone="Central European Stand
 `bad_request`, `unavailable`) with Graph's code and request id. Paths must be relative to
 v1.0, so the token only ever goes to Graph.
 
+**Four at a time per mailbox (`API-20`).** Outlook serves at most four concurrent requests per
+app and mailbox and refuses the fifth with 429 `ApplicationThrottled` and a Retry-After far past
+`MAX_RETRY_AFTER_MS`. The loop runs a round's tools concurrently, so the pack holds a
+`MailboxGate` (`mailbox-gate.ts`, `MAILBOX_CONCURRENCY = 4`): every request of a user takes a
+slot (`acquire` in the client config) from the fetch until its body is read, the rest queue in
+arrival order, and an abort leaves the queue. The gate lives in the pack, one per process: the
+API and the voice worker each hold four, so a chat and a call on the same mailbox at the same
+moment can still meet the limit.
+
 ## Environment
 
 | Variable                                           | api | voice                |
