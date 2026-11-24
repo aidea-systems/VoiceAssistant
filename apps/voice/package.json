@@ -8,10 +8,10 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx src/agent.ts dev",
+    "dev": "tsx --env-file-if-exists=.env src/agent.ts dev",
     "start": "node --import tsx src/agent.ts start",
-    "bench": "node --import tsx scripts/llm-bench.ts",
-    "call-test": "node --import tsx scripts/call-test.ts",
+    "bench": "node --env-file-if-exists=.env --import tsx scripts/llm-bench.ts",
+    "call-test": "node --env-file-if-exists=.env --import tsx scripts/call-test.ts",
     "pin-hash": "node --import tsx scripts/pin-hash.ts",
     "build": "tsc -p tsconfig.json --noEmit false",
     "typecheck": "tsc --noEmit -p tsconfig.json",

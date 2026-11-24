@@ -234,8 +234,11 @@ when sent (≤ 128 characters) and generated otherwise; it is on every response.
 ```
 cp apps/api/env.example apps/api/.env       # fill SUPABASE_* from `supabase status`, ANTHROPIC_API_KEY
 supabase start
-pnpm --filter @va/api dev                   # tsx watch src/index.ts on PORT (3000)
+pnpm --filter @va/api dev                   # tsx watch on PORT (3000), reading apps/api/.env when it exists
 ```
+
+The `dev` script passes `--env-file-if-exists=.env` to Node: `apps/api/.env` is read when present
+and skipped otherwise, and a variable already exported in the shell wins over the file.
 
 The container (`apps/api/Dockerfile`) installs the workspace with the frozen lockfile and runs
 `node --import tsx src/index.ts` from `apps/api` (where `tsx` resolves), because the workspace

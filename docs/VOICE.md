@@ -388,6 +388,9 @@ pnpm --filter @va/api dev                                # the API dispatches to
 AGENT_NAME=va-voice pnpm --filter @va/voice dev          # tsx src/agent.ts dev: the worker on LiveKit Cloud
 ```
 
+The `dev`, `bench` and `call-test` scripts also read `apps/voice/.env` when it exists
+(`--env-file-if-exists`); a value exported by the `source` line wins over the file.
+
 Then the call button in the PWA (Part 6), or the scripted caller below. `pnpm --filter @va/voice
 start` runs the worker in production mode (`node --import tsx src/agent.ts start`); the
 container (`apps/voice/Dockerfile`) does the same, with no port (the worker is an outbound
