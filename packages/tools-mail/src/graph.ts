@@ -28,6 +28,15 @@ export class GraphError extends Error {
   }
 }
 
+/** The request was abandoned before it left (an abort while it waited for a mailbox slot):
+ * Graph never saw it. `cause` is the abort's reason. */
+export class GraphNotSentError extends Error {
+  constructor(cause: unknown) {
+    super('graph request not sent', { cause })
+    this.name = 'GraphNotSentError'
+  }
+}
+
 export interface GraphClientConfig {
   /** The user's current access token. */
   token: (signal?: AbortSignal) => Promise<string>
@@ -75,7 +84,14 @@ export function createGraphClient(config: GraphClientConfig): GraphClient {
 
     for (let attempt = 0; ; attempt++) {
       headers.Authorization = `Bearer ${await config.token(o.signal)}`
-      const release = config.acquire ? await config.acquire(o.signal) : undefined
+      let release: (() => void) | undefined
+      try {
+        release = config.acquire ? await config.acquire(o.signal) : undefined
+      } catch (e) {
+        // Aborted while waiting for a slot: the request never left, which a write must not
+        // report as "maybe sent".
+        throw new GraphNotSentError(e)
+      }
       let res: Response
       let text: string
       try {

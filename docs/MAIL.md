@@ -186,7 +186,9 @@ app and mailbox and refuses the fifth with 429 `ApplicationThrottled` and a Retr
 `MAX_RETRY_AFTER_MS`. The loop runs a round's tools concurrently, so the pack holds a
 `MailboxGate` (`mailbox-gate.ts`, `MAILBOX_CONCURRENCY = 4`): every request of a user takes a
 slot (`acquire` in the client config) from the fetch until its body is read, the rest queue in
-arrival order, and an abort leaves the queue. The gate lives in the pack, one per process: the
+arrival order, and an abort leaves the queue. An abort while still queued is
+`GraphNotSentError` (Graph never saw the request): `reply_mail` answers it `outlook_unavailable`,
+not `write_outcome_unknown`, because nothing can have been sent. The gate lives in the pack, one per process: the
 API and the voice worker each hold four, so a chat and a call on the same mailbox at the same
 moment can still meet the limit.
 
