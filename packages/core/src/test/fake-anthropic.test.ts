@@ -112,6 +112,22 @@ describe('fake-anthropic', () => {
     expect(validateConversation([{ role: 'assistant', content: [text('x')] }])).toMatch(/first message/)
   })
 
+  it('F11: a mid-conversation system message follows a user message, is last or before an assistant one, and holds text only (API-18)', () => {
+    const date = { role: 'system', content: [text('Danas je utorak, 24. studenoga 2026.')] }
+    const user = { role: 'user', content: [text('a')] }
+    expect(validateConversation([user, date])).toBeNull()
+    expect(validateConversation([user, date, { role: 'assistant', content: [text('b')] }])).toBeNull()
+    expect(validateConversation([user, { role: 'assistant', content: [text('b')] }, date])).toMatch(
+      /must follow a `user` message/,
+    )
+    expect(validateConversation([user, date, { role: 'user', content: [text('c')] }])).toMatch(
+      /must be last or be followed by an `assistant`/,
+    )
+    expect(
+      validateConversation([user, { role: 'system', content: [{ type: 'image', source: {} }] }]),
+    ).toMatch(/text only/)
+  })
+
   it('F10: tool blocks in messages need tools on the request; a chain alone can still be checked for shape', async () => {
     const tu = toolUse('search_items', { query: 'x' })
     const roundTrip = [

@@ -1,10 +1,36 @@
 # Backlog — core
 
-Ids: CORE-16 (next free)
+Ids: CORE-18 (next free)
 
 The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
 
 ## Open
+
+### CORE-16 · Medium · Long conversations drop their oldest turns, which invalidates every replayed thinking block
+
+- **Check:** Code reading (found 2026-11-24 while fixing `API-18`)
+- **Where:** chat history is `ai_session_history(leaf, 200)` and `enforceHardCeiling(130_000)`
+  (`apps/api/src/chat/prepare.ts`, `packages/core/src/loop/history.ts`); a call keeps the last 20
+  rows (`apps/voice/src/messages.ts`, `MAX_MESSAGES`, `HISTORY_CEILING_TOKENS`)
+- **What happens:** once a chat passes 200 rows or about 130k tokens, each request starts at a
+  later turn than the one before, so `messages[0]` changes and Opus 5.5 rejects the thinking blocks
+  it replays (400 "bound to a different conversation"); on a call the window moves past 20 rows.
+  Removing whole leading turns is allowed only when the removed run starts at the first thinking
+  block, which a moving window does not guarantee
+- **Fix direction:** server-side compaction or context editing instead of a client-side window
+  (`CORE-3` is the summary writer), or `thinking.block_binding.prefix_mismatch_behavior:
+"drop_block"` on requests whose history was cut, with `input_transformations` logged
+
+### CORE-17 · Low · The advertised tools can change mid-conversation
+
+- **Check:** Code reading (found 2026-11-24 while fixing `API-18`)
+- **Where:** chat re-reads `registry.allowedTools` per request (`apps/api/src/chat/stream.ts`),
+  a call per turn (`apps/voice/src/session.ts`); both feed `tools`
+- **What happens:** when a user's role or the Landmark gate changes during a conversation, `tools`
+  differs from the earlier request and every replayed thinking block is refused, as in `API-18`
+- **Fix direction:** advertise the full set for the session and let the dispatch gate refuse what
+  is no longer allowed (it already does, invariant 5), or send `tool_addition` / `tool_removal`
+  blocks (beta `mid-conversation-tool-changes-2026-07-01`)
 
 ### CORE-15 · Low · On the spoken channels get_item cannot be reached and no item description can be heard
 

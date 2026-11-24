@@ -4,6 +4,8 @@ import {
   buildStaticSystemPrompt,
   buildUserContext,
   CHAT_INTRO_HR,
+  dateContext,
+  dateLine,
   CHAT_PRESENTATION_HR,
   DOMAIN_RULES_HR,
   VOICE_INTRO_HR,
@@ -74,5 +76,16 @@ describe('prompts', () => {
       expect(prompt).toContain('sustav je korisniku već pročitao sažetak')
       expect(prompt).not.toContain('ne možete unositi promjene')
     }
+  })
+
+  it('API-18: dateContext adds the date once per Zagreb day, as a system message, and never twice', () => {
+    const evening = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
+    const user = { role: 'user' as const, content: [{ type: 'text', text: 'Bok' }] }
+    const first = dateContext([user], evening)
+    expect(first).toEqual({ role: 'system', content: [{ type: 'text', text: dateLine(evening) }] })
+    expect(dateLine(evening)).toBe('Danas je utorak, 24. studenoga 2026.')
+    expect(dateContext([user, first!, user], evening)).toBeNull()
+    const next = dateContext([user, first!, user], new Date('2026-11-24T23:01:00Z'))
+    expect(next!.content).toEqual([{ type: 'text', text: 'Danas je srijeda, 25. studenoga 2026.' }])
   })
 })

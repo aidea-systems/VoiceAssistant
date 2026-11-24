@@ -1,8 +1,9 @@
 // What the worker hands the engine for every turn and for the warm-up: the Anthropic client,
 // the registry, the voice settings and a clock, turned into a `LoopConfig` for one caller. The
 // system blocks are the static voice prompt (with the cache breakpoint), the per-user block (with
-// the packs' per-user context) and the date line; the warm-up sends the same cached block, so the
-// first question hits the cache.
+// the packs' per-user context) and the call's date line, fixed when the call starts
+// (`CallSession.date`) so the prompt never changes mid-call (API-18); the warm-up sends the same
+// blocks, so the first question hits the cache.
 import type Anthropic from '@anthropic-ai/sdk'
 
 import {
@@ -44,6 +45,8 @@ export function voiceLoopConfig(
   confirmations: ConfirmationStore = new MemoryConfirmationStore(),
   userContext: readonly string[] = [],
   allowed: AllowedTools = null,
+  /** The call's date line (`CallSession.date`); today's when absent (the bench). */
+  date: string = dateLine(deps.clock()),
 ): LoopConfig {
   return {
     anthropic: deps.anthropic,
@@ -56,7 +59,7 @@ export function voiceLoopConfig(
         cache_control: { type: 'ephemeral' },
       },
       { type: 'text', text: buildUserContext(ctx, userContext) },
-      { type: 'text', text: dateLine(deps.clock()) },
+      { type: 'text', text: date },
     ],
     tools: deps.registry.anthropicTools(ctx, deps.channel, allowed),
     registry: deps.registry,

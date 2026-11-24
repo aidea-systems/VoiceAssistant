@@ -30,7 +30,7 @@ apps/voice/
 │   ├── env.ts              zod env (the Settings table below)
 │   ├── job.ts              callTokenOf(metadata), acceptDispatchedJob(req): a job without a call token is refused
 │   ├── call.ts             CallIdentity: token → voice_calls → authenticateToken; 60 s cache; touch(); end()
-│   ├── config.ts           VoiceDeps, voiceLoopConfig(deps, ctx): the LoopConfig of one caller; dateLine
+│   ├── config.ts           VoiceDeps, voiceLoopConfig(deps, ctx, …, date): the LoopConfig of one caller; the date line is the call's (CallSession.date, fixed at its start, API-18)
 │   ├── messages.ts         userTurnOf (the new user turn from LiveKit's context), callHistory (the call's own rows → messages)
 │   ├── tools.ts            createRegistry(tokens, landmark): the demo and mail packs, Landmark's when configured, with voiceAllowlist() (the reviewed list of what a caller may reach)
 │   ├── mail.ts             createVoiceTokenStore(env) (refresh-only), mailTokenProvider (docs/MAIL.md)

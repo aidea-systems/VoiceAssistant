@@ -23,7 +23,7 @@ export interface AssembleOptions {
 /** A row normalised: content is always a block array. */
 export interface ChainMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   turn_kind: string
   content: ContentBlock[]
 }
@@ -37,7 +37,9 @@ const SUMMARY_BANNER_START =
 const SUMMARY_BANNER_END = '\n\n[Kraj sažetka. Slijedi nastavak razgovora.]\n\n'
 
 export function assembleHistory(rows: readonly HistoryRow[], opts: AssembleOptions): InMemoryMessage[] {
-  const chain = repairUnansweredToolUse(rows.map(normalise).filter((m) => m.content.length > 0))
+  const chain = dropUnansweredSystem(
+    repairUnansweredToolUse(rows.map(normalise).filter((m) => m.content.length > 0)),
+  )
   const { kept, summaryText } = selectKeptChain(chain, opts.summary)
   const bounded = enforceHardCeiling(kept, opts.hardCeilingTokens)
   const messages = bounded.map((m): InMemoryMessage => ({ role: m.role, content: m.content }))
@@ -48,7 +50,7 @@ export function assembleHistory(rows: readonly HistoryRow[], opts: AssembleOptio
 function normalise(row: HistoryRow): ChainMessage {
   return {
     id: row.id,
-    role: row.role === 'assistant' ? 'assistant' : 'user',
+    role: row.role === 'assistant' || row.role === 'system' ? row.role : 'user',
     turn_kind: row.turn_kind,
     // Shallow copies: the loop mutates blocks (cache breakpoints, the summary banner) and the
     // caller's rows must stay as the database returned them.
@@ -92,6 +94,17 @@ export function repairUnansweredToolUse(chain: readonly ChainMessage[]): ChainMe
     }
   }
   return out
+}
+
+/**
+ * A system message (the date, API-18) must be followed by an assistant one or be the last message
+ * of the request. History is always followed by a new user message, so a stored one without an
+ * answer after it (its turn failed before the model replied) is left out, in memory only. Nothing
+ * was ever answered after it, so leaving it out the same way on every later request keeps the
+ * replay append-only; the caller adds today's date again when it is missing.
+ */
+export function dropUnansweredSystem(chain: readonly ChainMessage[]): ChainMessage[] {
+  return chain.filter((m, i) => m.role !== 'system' || chain[i + 1]?.role === 'assistant')
 }
 
 /** A turn starts at every `turn_kind: 'user'` row; tool_result rows stay with their turn. */
@@ -179,13 +192,14 @@ export function withoutToolBlocks(messages: readonly InMemoryMessage[]): InMemor
 
 /**
  * Moves the message-array cache breakpoint to the last block of the last message, clearing any
- * earlier one, so the conversation so far is a cacheable prefix for the next call.
+ * earlier one, so the conversation so far is a cacheable prefix for the next call. A trailing
+ * system message (the date, API-18) is skipped: the breakpoint goes on the message before it.
  */
 export function applyMessageCacheBreakpoint(messages: InMemoryMessage[]): void {
   for (const m of messages) {
     for (const b of m.content) if ('cache_control' in b) delete b.cache_control
   }
-  const last = messages.at(-1)
+  const last = messages.findLast((m) => m.role !== 'system')
   if (last && last.content.length > 0) {
     const i = last.content.length - 1
     last.content[i] = { ...last.content[i]!, cache_control: { type: 'ephemeral' } }

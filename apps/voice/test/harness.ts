@@ -65,6 +65,8 @@ export interface DepsOptions {
   settings?: Partial<ChannelSettings>
   /** The worker's own composition with the Landmark pack (the fake's url, secret and fetch). */
   landmark?: LandmarkPackConfig
+  /** The worker's wall clock; `NOW` by default. */
+  clock?: () => Date
 }
 
 export function deps(opts: DepsOptions = {}): VoiceDeps {
@@ -77,7 +79,7 @@ export function deps(opts: DepsOptions = {}): VoiceDeps {
       : createRegistry(null, opts.landmark ?? null),
     channel: opts.channel ?? 'voice',
     settings: { ...channelSettings(opts.channel ?? 'voice', {}), ...opts.settings },
-    clock: () => new Date(NOW),
+    clock: opts.clock ?? (() => new Date(NOW)),
   }
 }
 

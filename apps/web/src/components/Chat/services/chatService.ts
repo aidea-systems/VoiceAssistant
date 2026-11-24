@@ -112,7 +112,7 @@ export interface StreamMessageArgs {
   sessionId: string | null
   message: string
   parentMessageId: string | null
-  /** `location.pathname` at send time; the API prepends it in memory, never in the row. */
+  /** `location.pathname` at send time; the API hands it to the tools only, never to the model (API-17). */
   route: string | null
   /** The user's answer to a pending confirmation (Part 12): one of the two, never both. */
   confirm?: string

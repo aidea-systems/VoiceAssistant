@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import {
   type AllowedTools,
   type AuthContext,
+  dateLine,
   type ErrorCode,
   errorReason,
   log,
@@ -90,6 +91,9 @@ export class CallSession {
   private readonly maxTurns: number
   private readonly identityTimeoutMs: number
   private readonly userContextTimeoutMs: number
+  /** The call's date line, fixed when the call starts: the system prompt of every turn and of
+   * the warm-up carries it, so a call that crosses midnight keeps its thinking valid (API-18). */
+  readonly date: string
   /** The packs' per-user blocks, read once for the call (`userContextFor`). */
   private userContext: Promise<readonly string[]> | null = null
   /** Set once the goodbye was spoken: later turns (the caller spoke before the hang-up landed)
@@ -101,6 +105,7 @@ export class CallSession {
     readonly identity: CallIdentity,
     private readonly options: CallSessionOptions = {},
   ) {
+    this.date = dateLine(deps.clock())
     this.maxTurns = options.maxTurns ?? MAX_TURNS_PER_CALL
     this.identityTimeoutMs = options.identityTimeoutMs ?? IDENTITY_TIMEOUT_MS
     this.userContextTimeoutMs = options.userContextTimeoutMs ?? USER_CONTEXT_TIMEOUT_MS
@@ -255,6 +260,7 @@ export class CallSession {
       },
       persistAfter: this.saves,
       userContext,
+      date: this.date,
       ...(this.options.pickFiller ? { pickFiller: this.options.pickFiller } : {}),
       ...(this.options.pickEarlyFiller ? { pickEarlyFiller: this.options.pickEarlyFiller } : {}),
     })

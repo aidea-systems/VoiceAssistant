@@ -207,7 +207,9 @@ export default defineAgent<UserData>({
     const t0 = Date.now()
     void identity
       .ctx()
-      .then(async (auth) => warm(callDeps, auth, await call.userContextFor(auth), await call.allowedToolsFor(auth)))
+      .then(async (auth) =>
+        warm(callDeps, auth, await call.userContextFor(auth), await call.allowedToolsFor(auth), call.date),
+      )
       .then((r) => metrics.write('warm.jsonl', { room, ...r }))
       .catch((err: unknown) => {
         log('warn', LOG_TAG, 'warm failed', {

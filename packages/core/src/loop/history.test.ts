@@ -203,4 +203,48 @@ describe('history assembly', () => {
     expect(marked).toHaveLength(1)
     expect(messages.at(-1)!.content.at(-1)).toHaveProperty('cache_control', { type: 'ephemeral' })
   })
+
+  it('API-18: a stored system row is replayed as a system message in its place, and the breakpoint skips a trailing one', () => {
+    const date: HistoryRow = {
+      id: 's1',
+      role: 'system',
+      turn_kind: 'context',
+      content: [{ type: 'text', text: 'Danas je utorak, 24. studenoga 2026.' }],
+    }
+    // The stored row is replayed in its place; today's date for the new turn is added in memory
+    // by the caller after the new user message, as `prepare` does.
+    const messages = assembleHistory([user('u1', 'a'), date, assistant('a1', 'b'), user('u2', 'c')], opts)
+    messages.push({
+      role: 'system',
+      content: [{ type: 'text', text: 'Danas je srijeda, 25. studenoga 2026.' }],
+    })
+    expect(messages.map((m) => m.role)).toEqual(['user', 'system', 'assistant', 'user', 'system'])
+    expect(validateConversation(messages)).toBeNull()
+    expect(
+      splitTurns(
+        messages.map((m, i) => ({
+          ...m,
+          id: `m${i}`,
+          turn_kind: i === 0 || i === 3 ? 'user' : 'x',
+        })) as ChainMessage[],
+      ),
+    ).toHaveLength(2)
+    applyMessageCacheBreakpoint(messages)
+    expect(messages[4]!.content[0]).not.toHaveProperty('cache_control')
+    expect(messages[3]!.content.at(-1)).toHaveProperty('cache_control', { type: 'ephemeral' })
+  })
+
+  it('API-18: a system row left without an answer (the turn failed) is dropped in memory, so the next request keeps the API shape', () => {
+    const date = (id: string): HistoryRow => ({
+      id,
+      role: 'system',
+      turn_kind: 'context',
+      content: [{ type: 'text', text: 'Danas je utorak, 24. studenoga 2026.' }],
+    })
+    // s1's turn failed; s2 is the leaf of a turn that failed too, and a new user message follows.
+    const messages = assembleHistory([user('u1', 'a'), date('s1'), user('u2', 'b'), date('s2')], opts)
+    expect(messages.map((m) => m.role)).toEqual(['user', 'user'])
+    messages.push({ role: 'user', content: [{ type: 'text', text: 'c' }] })
+    expect(validateConversation(messages)).toBeNull()
+  })
 })

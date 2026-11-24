@@ -7,7 +7,6 @@ import {
   buildStaticSystemPrompt,
   buildUserContext,
   type ChannelSettings,
-  dateLine,
   log,
   type LoopHooks,
   MESSAGES_HR,
@@ -109,8 +108,9 @@ export function streamChatResponse(input: StreamInput): Response {
               text: buildStaticSystemPrompt('chat', deps.registry.domainRules()),
               cache_control: { type: 'ephemeral' },
             },
+            // No date here: the system prompt never changes during a chat. The date is a stored
+            // system message `prepare` adds when the day changes (API-18).
             { type: 'text', text: buildUserContext(ctx) },
-            { type: 'text', text: dateLine(deps.clock()) },
           ],
           tools: deps.registry.anthropicTools(ctx, 'chat', allowed),
           registry: deps.registry,

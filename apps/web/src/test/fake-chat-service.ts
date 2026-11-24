@@ -98,8 +98,8 @@ let rowCounter = 0
 export function messageRow(partial: {
   id?: string
   session_id: string
-  role: 'user' | 'assistant'
-  turn_kind?: 'user' | 'assistant' | 'tool_result'
+  role: 'user' | 'assistant' | 'system'
+  turn_kind?: 'user' | 'assistant' | 'tool_result' | 'context'
   content: unknown
   parent_id: string | null
   created_at?: string

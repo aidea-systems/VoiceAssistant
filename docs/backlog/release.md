@@ -1,6 +1,6 @@
 # Backlog — release
 
-Ids: REL-17 (next free)
+Ids: REL-18 (next free)
 
 Things written but not live: migrations to apply (dev first, with the check to run after), secrets
 to set, and checks nobody has run. Tick an item when it is done on every environment it names.
@@ -9,10 +9,18 @@ three sets of checks) and says how to paste the results back.
 
 ## Open
 
+- [ ] REL-17 · API-18: apply `20261124130000_system_messages.sql` to the dev project **before**
+      deploying the API that carries the fix (the old CHECK refuses the date rows it writes, and
+      every chat turn would fail). By the operator, `supabase db push`. Check after applying: as
+      the service role, an insert with `role = 'system', turn_kind = 'context'` into a test
+      session succeeds and one with `role = 'system', turn_kind = 'user'` is refused with `23514`
+      (or simply: after the deploy, a new chat answers and its rows show a `context` row after the
+      first user row). No generated type changes.
+
 - [ ] REL-16 · OPS-4: apply `20261124120000_session_retention.sql` to the dev project (by the
       operator, `supabase db push`; pg_cron is already enabled there, REL-1). Check after
       applying, in the SQL editor: `select jobname, schedule, active from cron.job where jobname
-    = 'session-retention-sweep'` gives one row, `15 3 * * *`, active (if none, run the
+  = 'session-retention-sweep'` gives one row, `15 3 * * *`, active (if none, run the
       migration's last DO block again); `select public.sweep_expired_sessions()` answers a number
       (0 while nothing is old enough); the next day the newest `cron.job_run_details` row for the
       job has `status = 'succeeded'`. No generated type changes.
@@ -88,7 +96,7 @@ three sets of checks) and says how to paste the results back.
       on the way: `API-17`, `API-19` (fixed), `API-18`, `API-20` (open). Left: the production
       redirect URI and env with `REL-9`, and `OPS-4` / `OPS-5` before the director's mailbox.
       Done 2026-11-24 in production: the redirect `https://34-141-30-245.sslip.io/integrations/
-      microsoft/callback` registered under Web, the six variables in `/etc/va/api.env` and the
+    microsoft/callback` registered under Web, the six variables in `/etc/va/api.env` and the
       four in `/etc/va/voice.env` with a production key of its own, api and voice recreated
       (`"microsoft":"configured"`); the operator connected from the Vercel PWA (`active`, `k1:`),
       listed mail and read a week's calendar in one call. `OPS-4` / `OPS-5` still come before
