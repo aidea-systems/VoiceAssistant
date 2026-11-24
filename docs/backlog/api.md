@@ -1,10 +1,27 @@
 # Backlog — api
 
-Ids: API-20 (next free)
+Ids: API-21 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
 ## Open
+
+### API-20 · Medium · A week's calendar is seven parallel Graph calls, and Outlook throttles the extra ones
+
+- **Check:** Confirmed live on 2026-11-24 (local, real mailbox): "Što imam u kalendaru ovaj
+  tjedan?" made seven `list_calendar` calls in one round; one came back `429
+  ApplicationThrottled` with no retry logged, and the answer said Friday "could not be loaded"
+- **Where:** `packages/tools-mail/src/tools/list-calendar.ts` ("One day per call"); the loop
+  dispatches one round's tools concurrently (invariant 2); `packages/tools-mail/src/graph.ts`
+  retries one 429 only when Retry-After is short enough
+- **What happens:** Outlook allows about four concurrent requests per app and mailbox, so any
+  round with more than four Graph calls (a week, several reads) loses some of them, and the user
+  hears that Outlook is unavailable for part of the answer
+- **Fix direction:** let `list_calendar` take a range (`date` plus `days`, at most 7, one
+  `calendarView` request; the voice output still capped), and cap concurrent Graph requests per
+  mailbox at four in the pack's client (a small semaphore per user), so the loop's concurrency
+  cannot exceed Outlook's. A tool description change moves the voice cache key: bench before and
+  after
 
 ### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
 
