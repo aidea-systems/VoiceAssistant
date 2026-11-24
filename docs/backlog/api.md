@@ -1,6 +1,6 @@
 # Backlog — api
 
-Ids: API-19 (next free)
+Ids: API-20 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
@@ -121,6 +121,10 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-19 · High · The chat rate limit was never applied: its count query is an ambiguous embed (300 PGRST201)
+
+Fixed on `fix/chat-route-context`: the count names `ai_messages_session_id_fkey` (`ai_sessions.summary_through_message_id` is a second relationship); the fake now answers PGRST201 like PostgREST (G09), so P09/P10 fail without the hint.
 
 ### API-17 · High · The chat route line was added to the message in memory only, so every later turn failed with 400
 

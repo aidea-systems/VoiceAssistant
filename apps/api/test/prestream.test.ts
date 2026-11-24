@@ -146,7 +146,7 @@ describe('POST /chat before the stream', () => {
   )
 
   scenario(
-    'P09 the burst limit: 19 user turns in five minutes pass, 20 are 429 and nothing is written',
+    'P09 the burst limit: 19 user turns in five minutes pass, 20 are 429 and nothing is written (API-19)',
     async () => {
       seedRows(CHAT_BURST_LIMIT - 1 - memberUserRows(), 60_000)
       expect(memberUserRows()).toBe(19)
@@ -161,7 +161,7 @@ describe('POST /chat before the stream', () => {
     },
   )
 
-  scenario('P10 the daily limit: 200 user turns older than the burst window are 429', async () => {
+  scenario('P10 the daily limit: 200 user turns older than the burst window are 429 (API-19)', async () => {
     seedRows(CHAT_DAILY_LIMIT - memberUserRows(), 60 * 60_000)
     const res = await call('/chat', { session_id: null, message: 'x' })
     expect(await flatError(res)).toMatchObject({ status: 429, code: 'rate_limited' })
