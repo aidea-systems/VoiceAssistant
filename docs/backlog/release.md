@@ -52,8 +52,10 @@ three sets of checks) and says how to paste the results back.
       `packages/db/src/database.ts`, and drop the hand-written table types in
       `packages/integrations/src/db.ts` (and the untyped cast in
       `packages/core/src/test/fake-supabase.test.ts`) for the generated ones.
+      Progress 2026-11-24: the table exists on `kdplqbldohrzsewhckgl` (a live connect wrote its
+      row). Left: `/db-types` and the swap from the hand-written types.
 
-- [ ] REL-13 · Part 13a: the first live connect, on a developer machine, once the admin's reply
+- [x] REL-13 · Part 13a: the first live connect, on a developer machine, once the admin's reply
       (`docs/requests/entra-admin-request.md`) is in: `MS_TENANT_ID`, `MS_CLIENT_ID`,
       `MS_CLIENT_SECRET` from it, `MS_REDIRECT_URI=http://localhost:3000/integrations/microsoft/callback`,
       a generated `INTEGRATIONS_KEY`, `WEB_APP_URL=http://localhost:5173` in `apps/api/.env`, the
@@ -74,6 +76,12 @@ three sets of checks) and says how to paste the results back.
       confirmed flag, and the confirmed reply reached only the `From`, not the `Reply-To`). Found
       on the way: `API-17`, `API-19` (fixed), `API-18`, `API-20` (open). Left: the production
       redirect URI and env with `REL-9`, and `OPS-4` / `OPS-5` before the director's mailbox.
+      Done 2026-11-24 in production: the redirect `https://34-141-30-245.sslip.io/integrations/
+      microsoft/callback` registered under Web, the six variables in `/etc/va/api.env` and the
+      four in `/etc/va/voice.env` with a production key of its own, api and voice recreated
+      (`"microsoft":"configured"`); the operator connected from the Vercel PWA (`active`, `k1:`),
+      listed mail and read a week's calendar in one call. `OPS-4` / `OPS-5` still come before
+      the director's mailbox.
 
 - [ ] REL-15 · Part 14: the Landmark live check, once David has carried out
       `docs/requests/landmark-assistant-api-request.md` on Landmark's `feat/assistant-api` and
@@ -99,7 +107,7 @@ three sets of checks) and says how to paste the results back.
       200 with the tool name, Landmark's `[assistant-api]` lines carry the mapped user id, and
       neither carries an address or a token.
 
-- [ ] REL-14 · Part 13a, and a precondition of Part 14: public sign-up off on every Supabase
+- [x] REL-14 · Part 13a, and a precondition of Part 14: public sign-up off on every Supabase
       project the assistant uses (Dashboard → Authentication → Sign In / Providers → "Allow new
       users to sign up" off; users are invited), and email confirmation stays on. The Outlook
       callback requires the user's confirmed email to equal the mailbox's UPN, and Landmark's
@@ -108,6 +116,8 @@ three sets of checks) and says how to paste the results back.
       their mailbox or their Landmark data. Check: a `POST` to
       `$SUPABASE_URL/auth/v1/signup` with the anon key as `apikey` and any email and password
       answers `422` with `signup_disabled` (`docs/RELEASE-RUNBOOK.md` → Connecting Outlook, B).
+      Done 2026-11-24 on `kdplqbldohrzsewhckgl` (the project the VM uses): sign-up off, the
+      `curl` answered `signup_disabled`, confirmation stays on.
 
 - [x] REL-11 · Part 12a: apply `20261103150000_tool_confirmations.sql` to the dev project (by the
       operator, `supabase db push`). Check after applying: as a signed-in user
