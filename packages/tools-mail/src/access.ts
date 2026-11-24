@@ -4,6 +4,7 @@
 // "not connected" and "Microsoft unavailable" become error envelopes the model knows how to say.
 import type { AuthContext, Channel } from '@va/core'
 
+import type { MailboxGate } from './mailbox-gate.js'
 import type { MessageRefs } from './refs.js'
 import { createGraphClient, type GraphClient, GraphError } from './graph.js'
 
@@ -34,6 +35,8 @@ export interface MailDeps {
   fetch: typeof fetch | undefined
   refs: MessageRefs
   clock: () => Date
+  /** Every Graph request of a user takes one of the mailbox's slots (API-20). */
+  gate: MailboxGate
 }
 
 export type AccessFailure = { error: 'outlook_not_connected' } | { error: 'outlook_unavailable' }
@@ -61,7 +64,13 @@ export async function withGraph<T>(
 ): Promise<T | AccessFailure> {
   const attempt = async (forceRefresh: boolean): Promise<T> => {
     const token = await tokenFor(deps, ctx, signal, forceRefresh)
-    return fn(createGraphClient({ token: async () => token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }))
+    return fn(
+      createGraphClient({
+        token: async () => token,
+        acquire: (s) => deps.gate.acquire(ctx.userId, s),
+        ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      }),
+    )
   }
   try {
     return await attempt(false)

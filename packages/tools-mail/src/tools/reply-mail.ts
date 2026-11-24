@@ -4,7 +4,7 @@ import { defineTool } from '@va/core'
 
 import { isAccessFailure, isSpoken, type MailDeps, withGraph } from '../access.js'
 import { stripInvisible } from '../clean.js'
-import { GraphError } from '../graph.js'
+import { GraphError, GraphNotSentError } from '../graph.js'
 import { REF_PATTERN } from '../refs.js'
 import { isTargetFailure, loadTarget, previewFailure } from './target.js'
 
@@ -68,6 +68,7 @@ export function replyMail(deps: MailDeps) {
               { signal: send },
             )
           } catch (e) {
+            if (e instanceof GraphNotSentError) throw e
             // A lost answer, a timeout or a server error after the request left: maybe sent.
             if (send.aborted || (e instanceof GraphError && (e.status === 0 || e.status >= 500)))
               throw new OutcomeUnknown()
@@ -77,6 +78,8 @@ export function replyMail(deps: MailDeps) {
       } catch (e) {
         // The same code dispatch gives a confirmed write past its ceiling: one rule for the model.
         if (e instanceof OutcomeUnknown) return { error: 'write_outcome_unknown' }
+        // Timed out while waiting for one of the mailbox's slots: nothing was sent (API-20).
+        if (e instanceof GraphNotSentError) return { error: 'outlook_unavailable' }
         if (e instanceof GraphError && e.kind === 'not_found') return { error: 'message_not_found' }
         throw e
       }

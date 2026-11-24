@@ -25,6 +25,14 @@ export class FakeGraph {
   unexpectedCalls = 0
   /** Access tokens Graph accepts; empty means any bearer token. */
   validTokens = new Set<string>()
+  /** Outlook's per-mailbox concurrency limit (four requests per app at once, 429
+   * `ApplicationThrottled` past it, with a Retry-After too long for the client to wait). Off by
+   * default; when on, every request is held `holdMs` so concurrent ones overlap. One fake is one
+   * mailbox. */
+  concurrency: { limit: number; holdMs: number } | null = null
+  /** The most requests that were in flight at once while `concurrency` was on. */
+  maxInFlight = 0
+  private inFlight = 0
   private routes: Array<{ method: string; path: string | RegExp; handler: Handler }> = []
   private faults: Array<{ match: (c: GraphCall) => boolean; fault: GraphFault; remaining: number }> = []
 
@@ -34,6 +42,9 @@ export class FakeGraph {
     this.validTokens.clear()
     this.routes = []
     this.faults = []
+    this.concurrency = null
+    this.maxInFlight = 0
+    this.inFlight = 0
   }
 
   /** The `fetch` the code under test is given. */
@@ -49,6 +60,23 @@ export class FakeGraph {
   }
 
   private async handle(req: Request, signal: AbortSignal | undefined): Promise<Response> {
+    const limit = this.concurrency
+    if (!limit) return this.answer(req, signal)
+    this.inFlight++
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight)
+    try {
+      if (this.inFlight > limit.limit) {
+        this.calls.push(callOf(req, undefined))
+        return graphError(429, 'ApplicationThrottled', { 'Retry-After': '30' })
+      }
+      await hold(limit.holdMs, signal)
+      return await this.answer(req, signal)
+    } finally {
+      this.inFlight--
+    }
+  }
+
+  private async answer(req: Request, signal: AbortSignal | undefined): Promise<Response> {
     const url = new URL(req.url)
     const text = req.method === 'GET' ? '' : await req.text()
     const call: GraphCall = {
@@ -105,6 +133,32 @@ export class FakeGraph {
       },
     })
   }
+}
+
+function callOf(req: Request, body: unknown): GraphCall {
+  const url = new URL(req.url)
+  return {
+    method: req.method,
+    path: url.pathname.replace(/^\/v1\.0/, ''),
+    query: url.searchParams,
+    headers: req.headers,
+    body,
+  }
+}
+
+function hold(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    if (signal?.aborted) return abort()
+    signal?.addEventListener('abort', abort, { once: true })
+  })
 }
 
 function graphError(status: number, code: string, headers: Record<string, string> = {}): Response {

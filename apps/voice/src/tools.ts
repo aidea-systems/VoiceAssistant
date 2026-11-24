@@ -17,7 +17,8 @@ import { mailTokenProvider } from './mail.js'
 // The four mail reads (Part 13b), each read-only and shaped for the ear on voice and phone:
 // list_mail and search_mail at most five messages with the sender's name (never an address),
 // the subject, the time and a 120-character preview; read_mail the new text clipped to 600
-// characters with names only; list_calendar at most five live events, times only. They carry
+// characters with names only; list_calendar at most five live events, times only (and each event's day when the
+// call covers several days). They carry
 // short refs (m1 …) for chaining, which the pack's prompt rules say are never spoken.
 // The two mail writes (Part 13c), each `confirmation: 'required'`: nothing is sent or flagged
 // until the caller's "da", decided in code from a closed set (answers.ts); the preview is read

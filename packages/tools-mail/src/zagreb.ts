@@ -39,6 +39,12 @@ export function zagrebIso(utc: string): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}${sign}${hh}:${mm}`
 }
 
+/** `YYYY-MM-DD` `n` calendar days after `day` (a date, so no zone or DST is involved). */
+export function addDays(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
 /** The UTC instants of a Zagreb day's midnight and the next one (23 or 25 hours apart on DST days). */
 export function zagrebDayBounds(day: string): { start: string; end: string } {
   const [y, m, d] = day.split('-').map(Number) as [number, number, number]

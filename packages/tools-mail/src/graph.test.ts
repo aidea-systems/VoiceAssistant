@@ -2,7 +2,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { FakeGraph } from '../test/fake-graph.js'
-import { createGraphClient, GraphError } from './graph.js'
+import { createGraphClient, GraphError, GraphNotSentError } from './graph.js'
+import { MailboxGate } from './mailbox-gate.js'
 
 const graph = new FakeGraph()
 let tokenCalls = 0
@@ -116,5 +117,66 @@ describe('graph client', () => {
     await expect(client().get('//evil.test/steal')).rejects.toThrow('path must be relative')
     expect(graph.calls).toHaveLength(0)
     expect(tokenCalls).toBe(0)
+  })
+
+  it('Q08: the mailbox slot comes back after every outcome: success, 503, a network failure, a 429 retry, an abort in flight (API-20)', async () => {
+    const gate = new MailboxGate(1)
+    const gated = (maxRetryAfterMs?: number) =>
+      createGraphClient({
+        token: async () => 'at',
+        fetch: graph.fetch,
+        acquire: (s) => gate.acquire('u1', s),
+        ...(maxRetryAfterMs !== undefined ? { maxRetryAfterMs } : {}),
+      })
+    graph.route('GET', '/me', { body: { ok: true } })
+    await gated().get('/me')
+    expect(gate.inUse('u1')).toBe(0)
+    graph.fault(() => true, { status: 503 })
+    expect((await failure(gated().get('/me'))).kind).toBe('unavailable')
+    expect(gate.inUse('u1')).toBe(0)
+    const broken: typeof fetch = async () => {
+      throw new TypeError('fetch failed')
+    }
+    await expect(
+      createGraphClient({
+        token: async () => 'at',
+        fetch: broken,
+        acquire: (s) => gate.acquire('u1', s),
+      }).get('/me'),
+    ).rejects.toBeInstanceOf(GraphError)
+    expect(gate.inUse('u1')).toBe(0)
+    // The retry's wait runs without the slot: another request is served meanwhile.
+    graph.fault((c) => c.path === '/me', { status: 429, retryAfter: '0.05' })
+    const retried = gated(1_000).get('/me')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(gate.inUse('u1')).toBe(0)
+    await retried
+    graph.fault(() => true, { hang: true })
+    const controller = new AbortController()
+    const hung = gated().get('/me', { signal: controller.signal })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(gate.inUse('u1')).toBe(1)
+    controller.abort()
+    await expect(hung).rejects.toMatchObject({ name: 'AbortError' })
+    expect(gate.inUse('u1')).toBe(0)
+    await gated().get('/me')
+    expect(gate.inUse('u1')).toBe(0)
+  })
+
+  it('Q09: an abort while waiting for a slot is GraphNotSentError, and Graph never sees the request', async () => {
+    const gate = new MailboxGate(1)
+    const held = await gate.acquire('u1')
+    graph.route('POST', '/me/messages/x/reply', { status: 202 })
+    const controller = new AbortController()
+    const pending = createGraphClient({
+      token: async () => 'at',
+      fetch: graph.fetch,
+      acquire: (s) => gate.acquire('u1', s),
+    }).post('/me/messages/x/reply', {}, { signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toBeInstanceOf(GraphNotSentError)
+    expect(graph.calls).toHaveLength(0)
+    held()
+    expect(gate.inUse('u1')).toBe(0)
   })
 })
