@@ -44,7 +44,7 @@ three sets of checks) and says how to paste the results back.
       drop the hand-written types in `apps/voice/src/phone/db.ts` for the generated ones. Then
       enrol the pilot caller (`docs/RELEASE-RUNBOOK.md` → Enrolling a caller).
 
-- [ ] REL-12 · Part 13a: apply `20261104100000_user_integrations.sql` to the dev project (by the
+- [x] REL-12 · Part 13a: apply `20261104100000_user_integrations.sql` to the dev project (by the
       operator, `supabase db push`). Check after applying: as a signed-in user
       `select status from user_integrations` returns 0 rows and
       `select refresh_token_enc from user_integrations` is refused with `42501`; as the service role an insert with
@@ -53,7 +53,10 @@ three sets of checks) and says how to paste the results back.
       `packages/integrations/src/db.ts` (and the untyped cast in
       `packages/core/src/test/fake-supabase.test.ts`) for the generated ones.
       Progress 2026-11-24: the table exists on `kdplqbldohrzsewhckgl` (a live connect wrote its
-      row). Left: `/db-types` and the swap from the hand-written types.
+      row). Done 2026-11-24: `database.ts` already carried the table (generated with #39), so
+      `@va/integrations` now reads it through the generated `Database` and the casts are gone;
+      the after-apply SQL checks were not run one by one on the project (pgTAP
+      `user_integrations` covers them locally, and the live connect wrote and revoked a row).
 
 - [x] REL-13 · Part 13a: the first live connect, on a developer machine, once the admin's reply
       (`docs/requests/entra-admin-request.md`) is in: `MS_TENANT_ID`, `MS_CLIENT_ID`,
