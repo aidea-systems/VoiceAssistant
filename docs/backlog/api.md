@@ -1,10 +1,26 @@
 # Backlog — api
 
-Ids: API-17 (next free)
+Ids: API-19 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
 ## Open
+
+### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
+
+- **Check:** Code reading (same mechanism as `API-17`, confirmed live on 2026-11-23)
+- **Where:** `apps/api/src/chat/stream.ts` (`dateLine(deps.clock())` as the third `system`
+  block, re-rendered on every request); `apps/voice/src/config.ts` does the same per call
+- **What happens:** Opus 5.5 binds each thinking block to the `system` prompt, the tools and every
+  earlier message. When the date changes (midnight in Zagreb) the `system` prompt differs, and the
+  first request after it answers 400 "bound to a different conversation"; the chat shows
+  "Interna greška pri pripremi upita" on every later turn of that session. A call that spans
+  midnight is exposed the same way, far less likely
+- **Fix direction:** keep `system` frozen per session: render the date once into an appended,
+  persisted context (a text block on the user row the web does not show, or a mid-conversation
+  `role: "system"` message saved with the history) when it differs from the last one sent; as a
+  safety net consider `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (beta
+  `thinking-binding-controls-2026-08-01`) with `input_transformations` logged, not as the fix
 
 ### API-16 · Low · No daily cap on replies the assistant sends
 
@@ -105,6 +121,10 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-17 · High · The chat route line was added to the message in memory only, so every later turn failed with 400
+
+Fixed on `fix/chat-route-context`: the route no longer reaches the model (it stays in `extras.clientContext` for the tools); test `API-17` asserts the next request replays the earlier one append-only.
 
 ### API-4 · Medium · A throwing `joinToken` leaves the session, the credential and the dispatch in place; `rollback()` ignores its results (R-A1)
 

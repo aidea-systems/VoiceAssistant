@@ -13,7 +13,6 @@ import {
   toolUse,
 } from '@va/core/test'
 
-import { contextLine } from '../src/chat/route-context.js'
 import {
   anthropic,
   buildApp,
@@ -34,6 +33,17 @@ const rowsOf = (sessionId: string) => db.rows('ai_messages').filter((m) => m.ses
 const kinds = (sessionId: string) => rowsOf(sessionId).map((m) => m.turn_kind)
 const blocks = (content: unknown, type: string) =>
   Array.isArray(content) ? content.filter((b) => b?.type === type) : []
+/** The messages as the conversation check sees them: the moving cache breakpoint is not an edit. */
+const withoutCacheControl = (messages: Array<{ role: string; content: unknown }>) =>
+  messages.map((m) => ({
+    role: m.role,
+    content: Array.isArray(m.content)
+      ? m.content.map((b: Record<string, unknown>) => {
+          const { cache_control: _ignored, ...rest } = b
+          return rest
+        })
+      : m.content,
+  }))
 
 describe('POST /chat stream', () => {
   scenario(
@@ -85,7 +95,7 @@ describe('POST /chat stream', () => {
   )
 
   scenario(
-    'C03 the route context is prepended in memory only, never persisted; a bad route adds nothing',
+    'C03 the route never reaches the model: the text is sent and persisted as typed (API-17)',
     async () => {
       anthropic.script(answer('ok'), answer('ok'))
       const sse = await chat({
@@ -94,13 +104,41 @@ describe('POST /chat stream', () => {
         client_context: { route: '/items/5?x=1' },
       })
       const sent = anthropic.calls[0]!.body.messages.at(-1)!.content as Array<{ text: string }>
-      expect(sent[0]!.text).toBe(`${contextLine('/items/5')}\n\nŠto je ovo?`)
+      expect(sent).toEqual([{ type: 'text', text: 'Što je ovo?', cache_control: { type: 'ephemeral' } }])
       const row = rowsOf(sse.events[0]!.data.session_id as string)[0]!
       expect(row.content).toEqual([{ type: 'text', text: 'Što je ovo?' }])
       await chat({ session_id: null, message: 'x', client_context: { route: 'javascript:alert(1)' } })
       expect((anthropic.calls[1]!.body.messages.at(-1)!.content as Array<{ text: string }>)[0]!.text).toBe(
         'x',
       )
+    },
+  )
+
+  scenario(
+    'API-17 the next turn replays the earlier request append-only, so its thinking block stays bound',
+    async () => {
+      anthropic.script(
+        {
+          content: [{ type: 'thinking', thinking: '', signature: 'sig-1' }, text('Jedna nepročitana.')],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 100, output_tokens: 20 },
+        },
+        answer('ok'),
+      )
+      const first = await chat({
+        session_id: null,
+        message: 'Imam li nepročitanih mailova?',
+        client_context: { route: '/c/new' },
+      })
+      const sessionId = first.events[0]!.data.session_id as string
+      await chat({ session_id: sessionId, message: 'Može.', client_context: { route: '/c/new' } })
+      const before = withoutCacheControl(anthropic.calls[0]!.body.messages)
+      const after = withoutCacheControl(anthropic.calls[1]!.body.messages)
+      expect(after.slice(0, before.length)).toEqual(before)
+      expect(after[before.length]).toEqual({
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking: '', signature: 'sig-1' }, text('Jedna nepročitana.')],
+      })
     },
   )
 

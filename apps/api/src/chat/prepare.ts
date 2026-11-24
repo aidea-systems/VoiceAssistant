@@ -197,7 +197,9 @@ export async function prepareChat(input: PrepareInput): Promise<ChatPrep | Respo
       )
     }
 
-    // 6. the user row, persisted as typed; the route context is added in memory by the stream
+    // 6. the user row, persisted as typed and sent as typed: anything added only in memory would
+    // be missing when the next turn replays this row, and Opus 5.5 rejects the thinking blocks
+    // that followed it (API-17)
     const content = [{ type: 'text', text: userMessage }]
     const { data: userRow, error: userError } = await ctx.serviceClient
       .from('ai_messages')
