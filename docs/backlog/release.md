@@ -1,6 +1,6 @@
 # Backlog — release
 
-Ids: REL-16 (next free)
+Ids: REL-17 (next free)
 
 Things written but not live: migrations to apply (dev first, with the check to run after), secrets
 to set, and checks nobody has run. Tick an item when it is done on every environment it names.
@@ -8,6 +8,14 @@ to set, and checks nobody has run. Tick an item when it is done on every environ
 three sets of checks) and says how to paste the results back.
 
 ## Open
+
+- [ ] REL-16 · OPS-4: apply `20261124120000_session_retention.sql` to the dev project (by the
+      operator, `supabase db push`; pg_cron is already enabled there, REL-1). Check after
+      applying, in the SQL editor: `select jobname, schedule, active from cron.job where jobname
+    = 'session-retention-sweep'` gives one row, `15 3 * * *`, active (if none, run the
+      migration's last DO block again); `select public.sweep_expired_sessions()` answers a number
+      (0 while nothing is old enough); the next day the newest `cron.job_run_details` row for the
+      job has `status = 'succeeded'`. No generated type changes.
 
 - [ ] Part 1 / Part 7: create branch protection on `main` with the Actions job checks `test`, `db`,
       `docker (api)`, `docker (voice)` and `docker (web)` as required checks, and enable Dependabot

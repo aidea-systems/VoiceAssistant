@@ -108,6 +108,13 @@ enabled (the migration skips the schedule with a notice otherwise; re-run its la
 enabling pg_cron). The guard checks `pg_extension`, not `to_regproc('cron.schedule')`: that name
 is overloaded, so `to_regproc` is NULL even with pg_cron installed.
 
+**Retention** (`20261124120000_session_retention.sql`, `OPS-4`): `public.sweep_expired_sessions()`
+deletes every session whose last activity (`updated_at`, moved by each new message) is older than
+30 days for `voice` and `phone` or 12 months for `chat` and `whatsapp`, and returns the count; the
+cascades take its messages, call row and confirmations. No API role has EXECUTE; the
+`session-retention-sweep` pg_cron job runs it daily at 03:15 UTC as the owner, guarded like
+`voice-calls-sweep`.
+
 ### `voice_caller_identities` (`20261103120000_phone_channel.sql`, Part 11)
 
 The phone channel's enrolled numbers (decision 0014): `id`, `user_id` (cascade; a user may have
@@ -259,6 +266,7 @@ import type { Database, Tables } from '@va/db'
 | `voice_caller_identities`  | nothing for authenticated or anon, the owner still reads `caller_identity_id` on their own session; the service role resolves a number and records failures and the lock; E.164 and a non-negative counter enforced; one active row per number, an inactive duplicate allowed; deleting the identity nulls the session's pointer, deleting the user cascades                           |
 | `tool_confirmations`       | the owner reads their own rows and cannot write; another user sees none; anon nothing; the service role's conditional consume wins once, a changed input does not match, outcomes are constrained, an expired row is not consumable; cascade with the session                                                                                                                          |
 | `user_integrations`        | the owner reads their row's state and is refused every token column and `select *`; no owner insert, update or delete; another user sees none; anon nothing; one row per user and provider; provider and status constrained; an active row holds a refresh token, a revoked row none; a failed refresh and a disconnect are allowed updates; `updated_at` moves; cascade with the user |
+| `ops_4_session_retention`  | the sweep deletes the sessions past 30 days (voice, phone) or 12 months (chat, whatsapp) with their messages, call row and confirmations, keeps younger ones, returns the count, finds nothing on a second run; no EXECUTE for anon, authenticated or service_role; the daily job where pg_cron exists                                                                                 |
 | `demo_tables`              | a member reads the catalogue and writes only their own notes, never an item; anon nothing; the service role seeds; deleting an item deletes its notes                                                                                                                                                                                                                                  |
 
 Each file is one transaction that rolls back. See `docs/TESTING.md` → Database tests for how to
