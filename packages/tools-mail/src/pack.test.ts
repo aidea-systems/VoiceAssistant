@@ -434,6 +434,49 @@ describe('@va/tools-mail', () => {
   )
 
   scenario(
+    'Z28 list_calendar takes a week in one request: Monday 00:00 to the next Monday in Zagreb; a call hears each event with its day; more than 7 days, or a year past 2099, is refused',
+    async () => {
+      anthropic.script(
+        callTools(
+          toolUse('list_calendar', { date: '2026-11-02', days: 7 }),
+          toolUse('list_calendar', { date: '2026-11-02', days: 8 }),
+          toolUse('list_calendar', { date: '9999-12-31', days: 2 }),
+        ),
+        answer('Ovaj tjedan…'),
+      )
+      const ctx = await authAs('member')
+      const run = await runChat(ctx, 'Što imam ovaj tjedan?', { packs: [pack()], allowlist: ALLOWLIST })
+      const views = graphCalls('/me/calendarView')
+      expect(views).toHaveLength(1)
+      expect(views[0]!.query.get('startDateTime')).toBe('2026-11-01T23:00:00.000Z')
+      expect(views[0]!.query.get('endDateTime')).toBe('2026-11-08T23:00:00.000Z')
+      const chat = sentToModel(run, 0) as { date: string; days: number; count: number; events: unknown[] }
+      expect(chat).toMatchObject({ date: '2026-11-02', days: 7, count: 5 })
+      expect(chat.events).toHaveLength(5)
+      expect(run.sink.toolResults[1]!.isError).toBe(true)
+      expect(run.sink.toolResults[2]!.isError).toBe(true)
+
+      anthropic.script(callTools(toolUse('list_calendar', { date: '2026-11-02', days: 7 })), answer('…'))
+      const call = await runChat(ctx, 'Što imam ovaj tjedan?', {
+        channel: 'voice',
+        packs: [pack()],
+        allowlist: ALLOWLIST,
+      })
+      expect(sentToModel(call, 0)).toEqual({
+        date: '2026-11-02',
+        days: 7,
+        count: 4,
+        events: [
+          { subject: 'Godišnji', day: '2026-11-04', all_day: true, start: null, end: null },
+          { subject: 'Jutarnji sastanak', day: '2026-11-04', all_day: false, start: '08:30', end: '09:00' },
+          { subject: 'Ručak s Markom', day: '2026-11-04', all_day: false, start: '12:00', end: '13:00' },
+          { subject: 'Sutrašnji', day: '2026-11-05', all_day: false, start: '09:00', end: '10:00' },
+        ],
+      })
+    },
+  )
+
+  scenario(
     'Z10 not connected, or not available here: one error envelope each, and no request to Graph',
     async () => {
       access = 'not_connected'

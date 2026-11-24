@@ -4,13 +4,15 @@ import { defineTool } from '@va/core'
 
 import { isAccessFailure, isSpoken, type MailDeps, withGraph, ZAGREB_TZ } from '../access.js'
 import { field } from '../clean.js'
-import { zagrebDay, zagrebDayBounds } from '../zagreb.js'
+import { addDays, zagrebDay, zagrebDayBounds } from '../zagreb.js'
 import { type GraphAddress, personName, subjectMax } from './messages.js'
 
 const CHAT_MAX = 20
 const VOICE_MAX = 5
 const PAGE = 50
 const LOCATION_MAX = 120
+/** A week at most per call: Monday to Sunday is one request (API-20). */
+const MAX_DAYS = 7
 
 interface GraphEvent {
   subject?: string | null
@@ -33,16 +35,31 @@ export function listCalendar(deps: MailDeps) {
   return defineTool({
     name: 'list_calendar',
     description:
-      "The user's own calendar for one day (Europe/Zagreb, today by default): each event's subject, start, end, location and organizer. One day per call.",
+      "The user's own calendar (Europe/Zagreb) from `date` (today by default) for `days` consecutive days (1 by default, at most 7): each event's subject, start, end, location and organizer. For a week or several days make one call with `days`, never one call per day; past seven days, make another call for the next stretch. `events` holds only the earliest events by start (20 in chat, 5 on a call) and `count` is how many there are: when `count` is larger, say so, or call again with `date` set to the day after the last event you got. Not for other people's calendars, free/busy, or creating or changing events.",
     input: z.object({
-      date: z.iso.date().optional().describe('YYYY-MM-DD; omit for today.'),
+      date: z.iso
+        .date()
+        .refine((d) => d >= '2000-01-01' && d <= '2099-12-31', 'a date between 2000 and 2099')
+        .optional()
+        .describe('The first day, YYYY-MM-DD; omit for today.'),
+      days: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_DAYS)
+        .optional()
+        .describe('How many days from `date`, 1 to 7; omit for that one day. A week from Monday is 7.'),
     }),
     requiredRoles: ['admin', 'member'],
     readOnly: true,
     async handler(input, ctx, extras, signal) {
       const spoken = isSpoken(extras.channel)
       const day = input.date ?? zagrebDay(deps.clock())
-      const { start, end } = zagrebDayBounds(day)
+      const days = input.days ?? 1
+      const { start } = zagrebDayBounds(day)
+      const { end } = zagrebDayBounds(addDays(day, days - 1))
+      // One day keeps the shape it always had; a range says how many days it covers.
+      const range = days > 1 ? { days } : {}
       const result = await withGraph(deps, ctx, signal, (graph) =>
         graph.get<{ value: GraphEvent[]; '@odata.nextLink'?: string }>('/me/calendarView', {
           select: ['subject', 'start', 'end', 'isAllDay', 'isCancelled', 'location', 'organizer'],
@@ -52,25 +69,32 @@ export function listCalendar(deps: MailDeps) {
         }),
       )
       if (isAccessFailure(result)) return result
-      // More than a page in one day: the count is a floor, and the model is told so.
+      // More than a page in the range: the count is a floor, and the model is told so.
       const more = result['@odata.nextLink'] !== undefined
       if (spoken) {
-        // A call hears the day's live events, times only, at most five.
+        // A call hears the live events, times only, at most five; over several days each says its
+        // day, and its times are read against that day.
         const live = result.value.filter((e) => e.isCancelled !== true)
         return {
           date: day,
+          ...range,
           count: live.length,
           ...(more ? { more: true } : {}),
-          events: live.slice(0, VOICE_MAX).map((e) => ({
-            subject: field(e.subject, subjectMax(true)) || '(bez naslova)',
-            all_day: e.isAllDay === true,
-            start: e.isAllDay ? null : spokenTime(e.start?.dateTime, day),
-            end: e.isAllDay ? null : spokenTime(e.end?.dateTime, day),
-          })),
+          events: live.slice(0, VOICE_MAX).map((e) => {
+            const own = days > 1 ? (e.start?.dateTime?.slice(0, 10) ?? day) : day
+            return {
+              subject: field(e.subject, subjectMax(true)) || '(bez naslova)',
+              ...(days > 1 ? { day: own } : {}),
+              all_day: e.isAllDay === true,
+              start: e.isAllDay ? null : spokenTime(e.start?.dateTime, own),
+              end: e.isAllDay ? null : spokenTime(e.end?.dateTime, own),
+            }
+          }),
         }
       }
       return {
         date: day,
+        ...range,
         count: result.value.length,
         ...(more ? { more: true } : {}),
         events: result.value.slice(0, CHAT_MAX).map((e) => ({
