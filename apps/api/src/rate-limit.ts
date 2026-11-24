@@ -33,7 +33,7 @@ export async function checkChatRateLimit(
   const count = (from: string) => {
     const query = ctx.serviceClient
       .from('ai_messages')
-      .select('id, ai_sessions!inner(user_id, channel)', { count: 'exact', head: true })
+      .select('id, ai_sessions!ai_messages_session_id_fkey!inner(user_id, channel)', { count: 'exact', head: true })
       .eq('turn_kind', 'user')
       .eq('ai_sessions.user_id', ctx.userId)
       .eq('ai_sessions.channel', 'chat')

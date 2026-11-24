@@ -20,7 +20,6 @@ import { SseEventSink } from '../sse/sink.js'
 import { SSEWriter } from '../sse/writer.js'
 import { dbConfirmationStore } from './confirmations.js'
 import { backfillTitleIfNew, type ChatPrep } from './prepare.js'
-import { prependRouteContext } from './route-context.js'
 import { dbMessageStore } from './store.js'
 
 export interface StreamInput {
@@ -95,7 +94,6 @@ export function streamChatResponse(input: StreamInput): Response {
         controller.abort()
       }, settings.requestTimeoutMs)
 
-      prependRouteContext(prep.messages, prep.route)
       // The packs' per-user gate (Landmark's role from its /me, cached a minute): the request's
       // tools and dispatch use the same answer (invariant 5). Never throws; null is no restriction.
       const allowed = await deps.registry.allowedTools(ctx, 'chat', controller.signal)

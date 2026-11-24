@@ -54,8 +54,7 @@ The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
   `buildUserContext` in `packages/core/src/prompts/index.ts`, `TRUNCATED_HR` in
   `packages/core/src/loop/orchestrator.ts`, the summary banner in `loop/history.ts`, `FILLERS_HR`
   in `packages/core/src/sinks/spoken.ts` (the refusal line is `MESSAGES_HR.model_refused`); in the
-  API the route context line (`apps/api/src/chat/route-context.ts`) and the voice session title
-  (`apps/api/src/voice/calls.ts`); the worker's greeting, bench questions and hints are `VOICE-2`
+  API the voice session title (`apps/api/src/voice/calls.ts`); the worker's greeting, bench questions and hints are `VOICE-2`
 - **What happens:** users read and hear placeholder Croatian written by the port, not by a native
   speaker; the voice prompt is Landmark's with the product name and role names swapped
 - **Fix direction:** a native speaker reads every `<!-- needs native review -->` block, the marks

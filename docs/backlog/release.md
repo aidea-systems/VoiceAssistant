@@ -69,6 +69,11 @@ three sets of checks) and says how to paste the results back.
       add to them), its body is the plain text as dictated, and `flag_mail` shows the flag in
       Outlook. If the reply also reached the `Reply-To`, stop: the pack must switch to
       `createReply` + PATCH + `send` (the security review of 13c, finding 5).
+      Progress 2026-11-24: the developer-machine part passed against the local stack and the
+      operator's own mailbox (Entra checks, connect, `k1:` row, Odspoji → `revoked`, list/read,
+      confirmed flag, and the confirmed reply reached only the `From`, not the `Reply-To`). Found
+      on the way: `API-17`, `API-19` (fixed), `API-18`, `API-20` (open). Left: the production
+      redirect URI and env with `REL-9`, and `OPS-4` / `OPS-5` before the director's mailbox.
 
 - [ ] REL-15 · Part 14: the Landmark live check, once David has carried out
       `docs/requests/landmark-assistant-api-request.md` on Landmark's `feat/assistant-api` and

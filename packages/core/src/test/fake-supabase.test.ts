@@ -141,4 +141,22 @@ describe('fake-supabase', () => {
     expect(error?.code).toBe('23505')
     expect(db.rows('user_integrations')).toHaveLength(1)
   })
+
+  it('G09: an embed two foreign keys could serve is 300 PGRST201 until the key is named (API-19)', async () => {
+    reset()
+    // ai_messages.session_id → ai_sessions, and ai_sessions.summary_through_message_id → ai_messages
+    const bare = await createServiceClient()
+      .from('ai_messages')
+      .select('id, ai_sessions!inner(user_id)')
+      .eq('ai_sessions.user_id', USERS.member.id)
+    expect(bare.status).toBe(300)
+    expect(bare.error?.code).toBe('PGRST201')
+    const named = await createServiceClient()
+      .from('ai_messages')
+      .select('id, ai_sessions!ai_messages_session_id_fkey!inner(user_id)')
+      .eq('ai_sessions.user_id', USERS.member.id)
+    expect(named.error).toBeNull()
+    expect(named.data!.length).toBeGreaterThan(0)
+    expect(named.data!.every((r) => r.ai_sessions.user_id === USERS.member.id)).toBe(true)
+  })
 })

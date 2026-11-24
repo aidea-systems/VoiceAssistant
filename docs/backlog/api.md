@@ -1,10 +1,43 @@
 # Backlog — api
 
-Ids: API-17 (next free)
+Ids: API-21 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
 ## Open
+
+### API-20 · Medium · A week's calendar is seven parallel Graph calls, and Outlook throttles the extra ones
+
+- **Check:** Confirmed live on 2026-11-24 (local, real mailbox): "Što imam u kalendaru ovaj
+  tjedan?" made seven `list_calendar` calls in one round; one came back `429
+  ApplicationThrottled` with no retry logged, and the answer said Friday "could not be loaded"
+- **Where:** `packages/tools-mail/src/tools/list-calendar.ts` ("One day per call"); the loop
+  dispatches one round's tools concurrently (invariant 2); `packages/tools-mail/src/graph.ts`
+  retries one 429 only when Retry-After is short enough
+- **What happens:** Outlook allows about four concurrent requests per app and mailbox, so any
+  round with more than four Graph calls (a week, several reads) loses some of them, and the user
+  hears that Outlook is unavailable for part of the answer
+- **Fix direction:** let `list_calendar` take a range (`date` plus `days`, at most 7, one
+  `calendarView` request; the voice output still capped), and cap concurrent Graph requests per
+  mailbox at four in the pack's client (a small semaphore per user), so the loop's concurrency
+  cannot exceed Outlook's. A tool description change moves the voice cache key: bench before and
+  after
+
+### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
+
+- **Check:** Code reading (same mechanism as `API-17`, confirmed live on 2026-11-23)
+- **Where:** `apps/api/src/chat/stream.ts` (`dateLine(deps.clock())` as the third `system`
+  block, re-rendered on every request); `apps/voice/src/config.ts` does the same per call
+- **What happens:** Opus 5.5 binds each thinking block to the `system` prompt, the tools and every
+  earlier message. When the date changes (midnight in Zagreb) the `system` prompt differs, and the
+  first request after it answers 400 "bound to a different conversation"; the chat shows
+  "Interna greška pri pripremi upita" on every later turn of that session. A call that spans
+  midnight is exposed the same way, far less likely
+- **Fix direction:** keep `system` frozen per session: render the date once into an appended,
+  persisted context (a text block on the user row the web does not show, or a mid-conversation
+  `role: "system"` message saved with the history) when it differs from the last one sent; as a
+  safety net consider `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (beta
+  `thinking-binding-controls-2026-08-01`) with `input_transformations` logged, not as the fix
 
 ### API-16 · Low · No daily cap on replies the assistant sends
 
@@ -105,6 +138,14 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-19 · High · The chat rate limit was never applied: its count query is an ambiguous embed (300 PGRST201)
+
+Fixed on `fix/chat-route-context`: the count names `ai_messages_session_id_fkey` (`ai_sessions.summary_through_message_id` is a second relationship); the fake now answers PGRST201 like PostgREST (G09), so P09/P10 fail without the hint.
+
+### API-17 · High · The chat route line was added to the message in memory only, so every later turn failed with 400
+
+Fixed on `fix/chat-route-context`: the route no longer reaches the model (it stays in `extras.clientContext` for the tools); test `API-17` asserts the next request replays the earlier one append-only.
 
 ### API-4 · Medium · A throwing `joinToken` leaves the session, the credential and the dispatch in place; `rollback()` ignores its results (R-A1)
 

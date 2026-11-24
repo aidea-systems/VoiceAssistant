@@ -22,7 +22,7 @@ apps/api/src/
 ├── rate-limit.ts       chat burst/daily; voice calls per day and concurrent calls through @va/core's checkCallLimits (voice and phone sessions count together)
 ├── middleware/         request-id, cors, body-limit (64 KB), auth (bearer → authenticateToken)
 ├── sse/                SSEWriter (framing, 15 s keepalive, write-failure detection), SseEventSink
-├── chat/               prepare (pre-stream pipeline), stream (worker and abort sources), store, route-context
+├── chat/               prepare (pre-stream pipeline), stream (worker and abort sources), store, route-context (sanitises the path for the tools)
 ├── routes/             health, chat, sessions, voice
 └── voice/              calls (start / refresh / end), livekit (injectable wrapper over livekit-server-sdk)
 apps/api/test/          harness (app.request + fakes + FakeLiveKit), prestream (P), stream (C), voice (V), tools (R)
@@ -76,8 +76,11 @@ must belong to the session: `not_found`; otherwise the session's newest row, or 
 session); history (`ai_session_history(leaf, 200)` through the service client, assembled by
 `@va/core`: `internal_error`); the user row (`internal_error`). Any failure after this request
 created a session deletes that session again. `client_context.route` is sanitised (a `/path`
-without query or hash, ≤ 200 characters) and prepended in memory to the typed text as
-`[Kontekst: korisnik je trenutno na /path]`; the row keeps the text as typed.
+without query or hash, ≤ 200 characters) and reaches the tools as `extras.clientContext.route`,
+never the model: the text is sent exactly as the row keeps it. Every request must replay the
+earlier ones append-only, because Opus 5.5 binds each thinking block to the conversation before
+it and answers 400 "bound to a different conversation" when an earlier message differs (`API-17`;
+the date line in `system` is the one known exception left, `API-18`).
 
 The write protocol (Part 12, decision 0015): `confirm` or `decline` (a uuid, never both, never
 with `session_id: null`) answers a pending `confirm` event with the user's words in `message`.

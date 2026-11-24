@@ -8,7 +8,8 @@
 // what the engine actually sends.
 //
 // The PostgREST subset: column and `*` selects; many-to-one embeds by relation name, FK column
-// or FK hint, with `!inner`; filters eq/neq/gt/gte/lt/lte/like/ilike/is/in, `not.` negation,
+// or FK hint, with `!inner` (`rel!fk_hint!inner(...)`), and 300 PGRST201 for a bare relation name
+// that foreign keys in either direction make ambiguous, as PostgREST answers; filters eq/neq/gt/gte/lt/lte/like/ilike/is/in, `not.` negation,
 // embedded filters (`alias.col`) and `or=(...)`; order with nulls first/last; limit/offset;
 // `Prefer: count=exact` (+ HEAD); `vnd.pgrst.object+json` (single); insert / update / delete
 // with `return=representation` (delete returns the removed rows); upsert (`on_conflict` with
@@ -430,6 +431,9 @@ export class FakeSupabase {
         }
       }
     } catch (e) {
+      if (e instanceof AmbiguousEmbedError) {
+        return json(300, { code: 'PGRST201', message: e.message, details: null, hint: null })
+      }
       return json(400, { code: 'PGRST200', message: (e as Error).message, details: null, hint: null })
     }
     return json(405, { message: 'fake-supabase: method not supported' })
@@ -536,15 +540,19 @@ function splitTopLevel(s: string): string[] {
 function parseSelect(s: string): SelectNode[] {
   return splitTopLevel(s).map((item): SelectNode => {
     if (item === '*') return { kind: 'star' }
-    const embed = item.match(/^(?:(\w+):)?(\w+)(?:!(\w+))?\((.*)\)$/s)
+    // `rel(...)`, `rel!inner(...)`, `rel!fk_hint(...)` and `rel!fk_hint!inner(...)`.
+    const embed = item.match(/^(?:(\w+):)?(\w+)((?:!\w+)*)\((.*)\)$/s)
     if (embed) {
-      const [, alias, rel, hint, inner] = embed
+      const [, alias, rel, modifiers, inner] = embed
+      const mods = modifiers ? modifiers.slice(1).split('!') : []
+      const hints = mods.filter((m) => m !== 'inner')
+      if (hints.length > 1) throw new Error(`fake-supabase: unsupported select item "${item}"`)
       return {
         kind: 'embed',
         alias: alias ?? rel!,
         rel: rel!,
-        hint: hint && hint !== 'inner' ? hint : null,
-        inner: hint === 'inner',
+        hint: hints[0] ?? null,
+        inner: mods.includes('inner'),
         children: parseSelect(inner || '*'),
       }
     }
@@ -553,6 +561,9 @@ function parseSelect(s: string): SelectNode[] {
     return { kind: 'col', alias: col[1] ?? col[2]!, name: col[2]! }
   })
 }
+
+/** PostgREST's PGRST201: an embed without a hint matches more than one foreign key. */
+class AmbiguousEmbedError extends Error {}
 
 function resolveRelation(
   table: string,
@@ -567,6 +578,14 @@ function resolveRelation(
     return { fkCol: col, target: n.rel }
   }
   const candidates = Object.entries(fks).filter(([, t]) => t === n.rel)
+  // PostgREST counts the keys in both directions: a key on the embedded table that points back
+  // at this one (one-to-many) makes a bare `rel(...)` ambiguous too, answered with 300 PGRST201.
+  const reverse = Object.entries(FKS[n.rel] ?? {}).filter(([, t]) => t === table)
+  if (candidates.length + reverse.length > 1) {
+    throw new AmbiguousEmbedError(
+      `Could not embed because more than one relationship was found for '${table}' and '${n.rel}'`,
+    )
+  }
   if (candidates.length !== 1) {
     throw new Error(
       `fake-supabase: cannot resolve relationship ${table} -> ${n.rel} (${candidates.length} candidates)`,
