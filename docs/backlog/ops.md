@@ -45,8 +45,9 @@ CI, hooks, env, logging, deploy, dependencies.
 ### OPS-5 · Medium · OQ: the DPA list and the records of processing do not exist yet
 
 - **Check:** Confirmed
-- **Where:** `docs/OPS.md` → Deploy sketch lists the sub-processors (Anthropic, LiveKit, Soniox,
-  ElevenLabs, Supabase, the host) with regions and the transfer basis each needs
+- **Where:** `docs/OPS.md` → Deploy lists the nine sub-processors with regions, the transfer
+  basis and an empty "DPA accepted on" column; `docs/requests/dpa-checklist.md` is the one page
+  for whoever signs (updated 2026-11-24 with Microsoft, Google, Vercel and Twilio)
 - **What happens:** the product cannot go to a user trial under GDPR without a DPA per processor,
   SCCs for the US ones (Anthropic, ElevenLabs) and the _evidencija aktivnosti obrade_ entry
 - **Fix direction:** the company's DPO (or whoever acts as one) signs each vendor's DPA, records

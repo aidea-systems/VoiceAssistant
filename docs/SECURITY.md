@@ -260,10 +260,10 @@ What is stored, where, and for how long:
 | Landmark tool results: project, contract, invoice and payment figures the caller asked for (Part 14)     | `ai_messages` tool_result rows of the conversation          | contract; Landmark's own data under its gate and RLS, copied into the caller's own conversation only        | with the conversation's rows (12 months or 30 days, `OPS-4`); Landmark keeps the source          |
 | logs and metrics: ids, timings, counts                                                                   | the host's log store, `apps/voice/logs`                     | legitimate interest (operations)                                                                            | proposal 30 days                                                                                 |
 
-Sub-processors (Anthropic, LiveKit, Soniox, ElevenLabs, Supabase, the hosting provider) are
-listed with regions and transfer basis in `docs/OPS.md` → Deploy sketch; the DPAs, the entries in
-the records of processing (_evidencija aktivnosti obrade_) and the SCCs for the US transfers
-(Anthropic, ElevenLabs) are `OPS-5`. Audio recording needs a lawful basis and a Croatian-language
+Sub-processors (Supabase, Anthropic, LiveKit, Soniox, ElevenLabs, Google, Vercel, Twilio, and
+Microsoft for the mailbox) are listed with regions and transfer basis in `docs/OPS.md` → Deploy;
+the DPAs, the entry in the records of processing (_evidencija aktivnosti obrade_) and the SCCs
+for the US companies are `OPS-5`, prepared in `docs/requests/dpa-checklist.md`. Audio recording needs a lawful basis and a Croatian-language
 announcement (ZEK plus GDPR) and stays off. A subject-access or deletion request is served by
 `user_id`: the sessions, their messages and the auth user. Retention is the daily
 `session-retention-sweep` pg_cron job (`public.sweep_expired_sessions()`,
@@ -273,6 +273,5 @@ confirmations, once its last activity (`ai_sessions.updated_at`) is past its per
 ## Open decisions
 
 - `REL-9` the first deploy on the hosts of decision 0013 (`OPS-3` is decided: a Google Cloud VM, decision 0017, and Vercel).
-- `OPS-4` retention for `channel = 'voice'` (and chat) rows, and the sweep that enforces it.
 - `OPS-5` the DPA list and the records of processing before the first user trial.
 - `CORE-1`, `VOICE-2` the native review of every Croatian string.
