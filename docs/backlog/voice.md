@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-23 (next free)
+Ids: VOICE-28 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,26 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-27 · Low · A model request the SDK retried left no trace, so a slow turn could not be explained
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: a first question waited 10.4 s for the model): the worker's Anthropic client uses `observedFetch`, which logs `model request failed` with the status, Anthropic's request id, Retry-After and the time for every refused or dropped attempt. The API's client does not have it yet.
+
+### VOICE-26 · Medium · A speech failure during the phone gate left the caller in silence until the PIN timed out
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: a revoked ElevenLabs key, two silent calls ending in `pin_timeout`): the session's error handler is attached before the session starts and routes a failure in the gate to an immediate hang-up; the `session error` line names the phase and the provider's HTTP status.
+
+### VOICE-25 · Medium · The first question of a call was slow (5–10 s): it ran before the warm-up had written the cache
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: turn 1 `cache_read_tokens: 0`, first event after 4.9 s and 10.4 s): a turn waits for a warm-up still in flight, at most 3 s, then reads the cache; `warm_wait_ms` in the timing line shows the wait.
+
+### VOICE-24 · Medium · The call did not hang up when the caller said goodbye
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: "doviđenja" was answered and the line stayed open): a closed set of goodbyes (`isGoodbye`) ends the call after the answer has played, like the cap's goodbye.
+
+### VOICE-23 · High · Every confirmed reply on a call failed after #63 (the cap filtered by a non-uuid id)
+
+Fixed on `fix/voice-reply-cap`: the daily cap left out "its own" confirmation with `id <> …`, but a call's confirmations live in memory with ids like `cf-0001-…`, so Postgres refused the filter (22P02), the cap check threw and the reply never went out (seen live 2026-11-25: "da" recognised, no send). The exclusion now applies only to uuid ids; the fake PostgREST refuses non-uuid values in uuid columns as Postgres does, so W42 failed before the fix.
 
 ### VOICE-20 · Low · The early filler answered a greeting with "Samo trenutak." (fixed 2026-11-09)
 

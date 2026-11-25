@@ -17,6 +17,8 @@ The engine (`packages/core`): loop, tools, prompts, history, sinks, fakes.
   it replays (400 "bound to a different conversation"); on a call the window moves past 20 rows.
   Removing whole leading turns is allowed only when the removed run starts at the first thinking
   block, which a moving window does not guarantee
+- **Progress 2026-11-25:** calls now keep every turn (`apps/voice/src/messages.ts`, test
+  `W04e / CORE-16`), so the voice side is fixed; the chat window (200 rows / 130k tokens) is open
 - **Fix direction:** server-side compaction or context editing instead of a client-side window
   (`CORE-3` is the summary writer), or `thinking.block_binding.prefix_mismatch_behavior:
 "drop_block"` on requests whose history was cut, with `input_transformations` logged

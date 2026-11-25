@@ -167,7 +167,7 @@ describe('reply_mail on a call', () => {
     expect(replies()).toHaveLength(0)
   }
 
-  scenario('W42 the preview is read out; "da" sends exactly one reply to the sender', async () => {
+  scenario('W42 (VOICE-23) the preview is read out; "da" sends exactly one reply to the sender', async () => {
     const call = await mailCall()
     await previewReply(call)
     anthropic.script(

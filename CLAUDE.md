@@ -87,7 +87,7 @@ or React. Import a package through its root (`@va/core`), never through `src/`.
 | Setting                   | chat                                           | voice                                           |
 | ------------------------- | ---------------------------------------------- | ----------------------------------------------- |
 | sink                      | `SseEventSink` (deltas + blocks + tool events) | `SpokenTextSink` (text, filler, speakable)      |
-| history                   | DB, bounded walk from the leaf                 | call context in memory, last 20, no system rows |
+| history                   | DB, bounded walk from the leaf                 | the whole call in memory, no system rows        |
 | persistence               | per row, inside the loop                       | deferred, after the answer                      |
 | model / effort / thinking | Opus 5.5 / medium / adaptive                   | Sonnet 5.5 / low / `between_tools`              |
 | max_tokens / iterations   | 8192 / 10                                      | 1024 / 4                                        |

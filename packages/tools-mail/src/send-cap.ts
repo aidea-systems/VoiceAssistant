@@ -11,13 +11,17 @@ import type { AuthContext } from '@va/core'
 import { zagrebDay, zagrebDayBounds } from './zagreb.js'
 
 export const SEND_LIMIT_PER_DAY = 20
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const MAIL_SEND_TOOLS = ['reply_mail', 'send_mail'] as const
 
 export type SendCapFailure = { error: 'send_limit_reached'; limit: number }
 
 /** Null while the user may still send today; the failure once the cap is reached. `self` is the
- * confirmation the confirmed turn is running under: already marked confirmed, it is left out so
- * a send does not count itself. Throws when the count cannot be read (a write is never let
+ * confirmation the confirmed turn is running under: already marked confirmed in the table, it is
+ * left out so a send does not count itself. Only a table row can be left out: a call keeps its
+ * confirmations in memory (ids like `cf-0001-…`, not uuids), which are never counted anyway, and
+ * a filter on such an id is refused by Postgres (22P02), which made every reply on a call fail
+ * (VOICE-23). Throws when the count cannot be read (a write is never let
  * through on a guess). */
 export async function checkSendCap(
   ctx: AuthContext,
@@ -33,7 +37,7 @@ export async function checkSendCap(
     .in('tool', [...MAIL_SEND_TOOLS])
     .not('confirmed_at', 'is', null)
     .gte('confirmed_at', start)
-  if (self) query = query.neq('id', self.id)
+  if (self && UUID_RE.test(self.id)) query = query.neq('id', self.id)
   const { count, error } = await query.abortSignal(signal)
   if (error || count === null) throw new Error('send cap count failed')
   return count >= SEND_LIMIT_PER_DAY ? { error: 'send_limit_reached', limit: SEND_LIMIT_PER_DAY } : null

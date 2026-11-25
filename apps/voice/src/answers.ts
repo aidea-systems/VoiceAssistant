@@ -55,3 +55,33 @@ export function classifyAnswer(text: string): Answer {
   if (NO.has(n)) return 'no'
   return 'other'
 }
+
+// The caller's goodbye (VOICE-24): after the model's answer to one of these the call hangs up,
+// instead of staying open until the caller does. Closed like the yeses: "doviđenja, a reci mi
+// još…" is a question, and "bok" alone is a greeting as often as a goodbye, so neither ends the
+// call. <!-- needs native review -->
+const GOODBYE = new Set([
+  'dovidenja',
+  'hvala dovidenja',
+  'dovidenja hvala',
+  'hvala i dovidenja',
+  'hvala vam dovidenja',
+  'hvala lijepa dovidenja',
+  'to je sve',
+  'to je sve hvala',
+  'hvala to je sve',
+  'to je to hvala',
+  'hvala to je to',
+  'laku noc',
+  'ugodan dan',
+  'hvala ugodan dan',
+  'zbogom',
+  'cujemo se',
+  'hvala bok',
+  'bok hvala',
+  'hvala cao',
+])
+
+export function isGoodbye(text: string): boolean {
+  return GOODBYE.has(normalizeAnswer(text))
+}

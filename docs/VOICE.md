@@ -113,7 +113,10 @@ The sink logic (held first sentence, one filler per turn, `speakable()`) lives i
 now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is never logged.
 4. The warm-up starts without being awaited: `identity.ctx()` then `warm()` (a `max_tokens: 0`
    request with the exact model, system, tools, thinking and effort of a real turn) while the
-   greeting plays, logged to `warm.jsonl`.
+   greeting plays, logged to `warm.jsonl`. A turn that starts while it is still running waits
+   for it, at most `WARM_WAIT_MS` (3 s), so the first question reads the cache instead of
+   writing it a second time in parallel (`VOICE-25`: live, a first question without the cache
+   took 5–10 s); the wait is the timing line's `warm_wait_ms`.
 5. The `AgentSession` starts with the providers and the turn-handling settings below
    (`turnDetection: 'stt'`, `interruption.mode: 'vad'`, **preemptive generation off**: LiveKit
    would otherwise run the engine on partial transcripts, count those against the call and
@@ -127,8 +130,9 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    `last_seen_at` off the critical path, runs the turn and logs one
    `timing` line. The model's history is the call's own rows kept in worker memory, exactly as
    the loop wrote them (user text, assistant blocks with `tool_use`, the `tool_result` rows),
-   at most 20 rows cut on a turn boundary (the newest turn always whole) and assembled by the
-   engine (`callHistory`; decision 0011). LiveKit's text-only context is not used for history: a model that saw its
+   every row of the call (no window: dropping the oldest turns would change the first message
+   and the model would refuse its earlier thinking, `CORE-16`; a call is at most 15 minutes and
+   50 turns) and assembled by the engine (`callHistory`; decision 0011). LiveKit's text-only context is not used for history: a model that saw its
    earlier answer with no lookup behind it retracted it on the next question (`VOICE-5`). The
    call's turns run one after another: a turn LiveKit starts while the cancelled one is still
    unwinding (a barge-in) waits for it, so its history carries the cut-short turn's rows and
@@ -139,7 +143,11 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    the session reports it (`onEnded`) and the worker hangs up once that reply's speech has
    played out (`HangUp` waits for the `SpeechHandle` LiveKit created for the turn, or 10 s of
    grace; an earlier answer still draining does not pre-empt it, `V-2`); a question that still
-   arrives hears nothing (`VOICE-11`).
+   arrives hears nothing (`VOICE-11`). The caller's own goodbye ends the call the same way
+   (`caller_goodbye`, `VOICE-24`): when the whole utterance is one of a closed set
+   (`isGoodbye` in `answers.ts`: "doviđenja", "hvala, doviđenja", "to je sve", "laku noć",
+   "čujemo se" …; not "bok" alone, which is as often a greeting, nor plain "hvala"), the model
+   answers it, then the call hangs up once that answer has played.
    After a barge-in the rows keep the whole answer the model wrote, not what was played
    (decision 0011, `VOICE-10`).
 7. While the participant is connected the worker bumps `last_seen_at` every minute, so a quiet
@@ -155,7 +163,11 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    playout or the 10 s grace (`sessionErrorAction`); a recoverable one is only logged, LiveKit
    retries it. The
    session's own `close` event (LiveKit's unrecoverable-error limit, or the drain on shutdown)
-   hangs up as well (`VOICE-12`).
+   hangs up as well (`VOICE-12`). The handler is attached before the session starts, so a
+   failure during the phone gate (the greeting, the PIN prompt) hangs up at once instead of
+   leaving the caller in silence until the PIN times out (`SessionErrorRoute`, `VOICE-26`; seen
+   live with a revoked ElevenLabs key). The `session error` line carries the `phase` (`gate`,
+   `call`) and the provider's HTTP `status` (401 is a revoked key).
 
 ## Settings (`env.ts`)
 
@@ -188,7 +200,7 @@ Fixed in code, not settings: `turnDetection: 'stt'` (LiveKit's turn detector has
 `stt-rt-v5`, `languageHints: ['hr']` strict, `eleven_v4_turbo` with `language: 'hr'`, and the
 voice channel's engine settings (`docs/CORE.md` → Channels: Sonnet 5.5, `low`, `between_tools`,
 1024 tokens, 4 iterations, 6 s per tool (a confirmed write up to 20 s: once the caller said yes it
-runs to its outcome, so a turn may outlast its 25 s by that much), 25 s per request, last 20 messages, the sink's 200 ms
+runs to its outcome, so a turn may outlast its 25 s by that much), 25 s per request, the whole call as history, the sink's 200 ms
 hold, which `runVoiceTurn` takes from `settings.holdMs`).
 
 ## Latency budget and measurements
@@ -411,7 +423,7 @@ The phone channel adds `phone refused` (`reason`, a `number_hash` or the identit
 (`outcome`, `reason`, `pin_used`, `ms`), `pin wrong` / `pin locked` (`failures`, `lock_ms`),
 `phone rate limited`, `phone call started`, `call refused`, `session revoke failed`, `room delete
 failed`: never a number, a digit, a token or a link hash. Then the shared lines:
-`timing` per turn (`auth_ms`, `first_text_ms`, `total_ms`, the engine's marks as `name@ms`,
+`timing` per turn (`auth_ms`, `warm_wait_ms`, `first_text_ms`, `total_ms`, the engine's marks as `name@ms`,
 `spoken_len`, token and cache counts, `outcome`), `turn dropped`, `turn limit reached`, `identity timeout`
 (with `timeout_ms`), `identity refused`, `call ended` (the cap), `call ending` (with its
 `reason`).
@@ -578,7 +590,7 @@ scenario's deferred rows never land in the next one's world.
 | W02        | an unknown, foreign-room, expired or idle token resolves to null; a failed lookup throws                                                                                                                                                                                                                                                                    |
 | W03        | identity cached for 60 s, re-read after (second `getUser` only once the clock moves); role change                                                                                                                                                                                                                                                           |
 | W03b, W03c | a rotated JWT, a deleted row (`call_ended`), `end()` idempotent; `touch()` with the user filter                                                                                                                                                                                                                                                             |
-| W04        | `userTurnOf`: the trailing user items are the turn, system items, the greeting and earlier turns are not; `callHistory`: tool rounds kept as written, a cut-short turn repaired; `VOICE-13`: at most 20 rows from a user row, a lone longer turn whole                                                                                                      |
+| W04        | `userTurnOf`: the trailing user items are the turn, system items, the greeting and earlier turns are not; `callHistory`: tool rounds kept as written, a cut-short turn repaired; `CORE-16`: every turn kept, each turn's history starts with the previous one's unchanged                                                                                   |
 | W05        | filler then answer in order, a flush after the filler; the tool ran with the caller's JWT                                                                                                                                                                                                                                                                   |
 | W06        | a tool outside the voice allowlist is refused at dispatch even when the model names it                                                                                                                                                                                                                                                                      |
 | W07        | rows written after the answer, chained, newest row first for the next turn, one insert                                                                                                                                                                                                                                                                      |
@@ -588,6 +600,7 @@ scenario's deferred rows never land in the next one's world.
 | W10        | the voice model profile (Sonnet 5.5, `between_tools`, low, fallbacks + beta) on every request                                                                                                                                                                                                                                                               |
 | W11, W12   | a model error is spoken and the stream ends; a refusal with nothing spoken says the decline                                                                                                                                                                                                                                                                 |
 | W13        | the metrics writer refuses content keys; `VOICE-6`: a `turns.jsonl` line joins the user item's Soniox delays with the reply's model, TTS and e2e figures, built from real 1.9.2 `ChatMessage` items; the greeting is not a turn                                                                                                                             |
+| VOICE-24   | the caller's goodbye from a closed set: answered, then `onEnded('caller_goodbye')`, later speech unanswered; a greeting or plain thanks does not end the call                                                                                                                                                                                               |
 | VOICE-11   | past the 15-minute cap (a gone row) the caller hears the goodbye once, `onEnded` fires once, no model is called; `HangUp` waits for the agent's last line or 10 s, runs once (VOICE-11b–d)                                                                                                                                                                  |
 | VOICE-12   | `participantLeft`: only the caller's identity (the user id) ends the call; `sessionErrorAction`: a recoverable provider error is logged, an unrecoverable one is spoken and hangs up, not spoken after a TTS failure                                                                                                                                        |
 | W14        | the cap is 50 turns per call; past it the caller hears `rate_limited` and no model is called (pinned with a cap of 1); an expired JWT is `unauthorized`, a failed lookup `internal_error`                                                                                                                                                                   |

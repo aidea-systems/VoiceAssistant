@@ -250,17 +250,24 @@ describe('a spoken turn', () => {
     }
   })
 
-  scenario('API-18 a call that crosses midnight keeps its date: system is byte-identical on every request', async () => {
-    let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
-    anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
-    const call = await openCall({ clock: () => now })
-    await (await ask(call, 'Bok')).done
-    now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
-    await (await ask(call, 'Jeste li još tu?')).done
-    const [one, two] = anthropic.calls.map((c) => c.body.system as Array<{ text: string }>)
-    expect(two).toEqual(one)
-    expect(one!.at(-1)!.text).toBe('Danas je utorak, 24. studenoga 2026.')
-  })
+  scenario(
+    'API-18 a call that crosses midnight keeps its date: system is byte-identical on every request',
+    async () => {
+      let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
+      anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
+      const call = await openCall({ clock: () => now })
+      await (
+        await ask(call, 'Bok')
+      ).done
+      now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
+      await (
+        await ask(call, 'Jeste li još tu?')
+      ).done
+      const [one, two] = anthropic.calls.map((c) => c.body.system as Array<{ text: string }>)
+      expect(two).toEqual(one)
+      expect(one!.at(-1)!.text).toBe('Danas je utorak, 24. studenoga 2026.')
+    },
+  )
 
   scenario('VOICE-7 the timing line carries the marks with their times, name@ms, in order', async () => {
     anthropic.script(callTools(toolUse('search_items', { query: 'a' })), answer('Da.'))
@@ -414,6 +421,69 @@ describe('a spoken turn', () => {
       expect(anthropic.calls).toHaveLength(0)
     },
   )
+
+  scenario(
+    'VOICE-24 the caller says goodbye: the model answers it, then the session reports the end; a greeting or thanks does not',
+    async () => {
+      const ended: string[] = []
+      const call = await openCall({ onEnded: (reason) => ended.push(reason) })
+      anthropic.script(
+        answer('Dobar dan, izvolite.'),
+        answer('Nema na čemu.'),
+        answer('Doviđenja, ugodan dan!'),
+      )
+      await (
+        await ask(call, 'Bok.')
+      ).done
+      await (
+        await ask(call, 'Hvala.')
+      ).done
+      await call.session.settle()
+      expect(ended).toEqual([])
+      const out = await (await ask(call, 'Hvala, doviđenja.')).done
+      expect(out.text).toBe('Doviđenja, ugodan dan!')
+      await call.session.settle()
+      expect(ended).toEqual(['caller_goodbye'])
+      expect(logs.some((l) => l.line.includes('"caller goodbye"'))).toBe(true)
+      // Anything the caller still says before the line drops is not answered.
+      const late = await (await ask(call, 'Halo?')).done
+      expect(late.text).toBe('')
+      expect(anthropic.calls).toHaveLength(3)
+    },
+  )
+
+  scenario(
+    'VOICE-25 the first question waits for a warm-up still in flight, so it reads the prompt cache; never longer than the limit',
+    async () => {
+      let warmed!: () => void
+      const call = await openCall({ warmWaitMs: 200 })
+      call.session.warming(new Promise<void>((resolve) => (warmed = resolve)))
+      anthropic.script(answer('Dobar dan.'))
+      const pending = ask(call, 'Dobar dan.')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(anthropic.calls).toHaveLength(0)
+      warmed()
+      await (
+        await pending
+      ).done
+      await call.session.settle()
+      expect(anthropic.calls).toHaveLength(1)
+      const timing = logs.find((l) => l.line.includes('"timing"') && l.line.includes('"turn":1'))!
+      expect(timing.line).toMatch(/"warm_wait_ms":\d+/)
+    },
+  )
+
+  scenario('VOICE-25b a warm-up that never finishes holds the first question at most the limit', async () => {
+    const stuck = await openCall({ warmWaitMs: 100 })
+    stuck.session.warming(new Promise<void>(() => {}))
+    anthropic.script(answer('Dobar dan.'))
+    const t0 = Date.now()
+    await (
+      await ask(stuck, 'Dobar dan.')
+    ).done
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(anthropic.calls).toHaveLength(1)
+  })
 
   scenario('W14c a failed identity lookup is spoken as internal_error, not as "not signed in"', async () => {
     const call = await openCall()

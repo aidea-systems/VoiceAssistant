@@ -9,7 +9,7 @@ export { type VoiceDeps, voiceLoopConfig } from './config.js'
 export { parseVoiceEnv, type VoiceEnv } from './env.js'
 export { GREETING_HR } from './greeting.js'
 export { acceptDispatchedJob, callTokenOf } from './job.js'
-export { callHistory, MAX_MESSAGES, userTurnOf } from './messages.js'
+export { callHistory, userTurnOf } from './messages.js'
 export { installStdoutRedaction, redactLine } from './redact.js'
 export { startOptions, turnHandlingOptions, vadFor } from './session-options.js'
 export {

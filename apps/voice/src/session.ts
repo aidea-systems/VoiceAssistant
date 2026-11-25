@@ -17,7 +17,7 @@ import {
   type SpokenEnd,
 } from '@va/core'
 
-import { classifyAnswer } from './answers.js'
+import { classifyAnswer, isGoodbye } from './answers.js'
 import type { CallIdentity } from './call.js'
 import { LOG_TAG, type VoiceDeps } from './config.js'
 import { withDeadline } from './deadline.js'
@@ -50,6 +50,10 @@ export const IDENTITY_TIMEOUT_MS = 5_000
  * calls to Landmark one after another, about three seconds (2026-11-11), so the deadline leaves
  * room for them and still ends a hung read before the caller's first question waits long. */
 export const USER_CONTEXT_TIMEOUT_MS = 6_000
+/** How long a turn waits for a warm-up still writing the prompt cache (VOICE-25). A cold first
+ * question took 5–10 s live; a warm-up of the same prefix finishes in a second or two, after
+ * which the question reads the cache. Past this the turn goes ahead uncached. */
+export const WARM_WAIT_MS = 3_000
 
 export interface TurnIO {
   /** What the caller just said. */
@@ -65,11 +69,14 @@ export interface CallSessionOptions {
   identityTimeoutMs?: number
   /** The deadline on the per-user context read (`USER_CONTEXT_TIMEOUT_MS`). */
   userContextTimeoutMs?: number
+  /** The longest a turn waits for an unfinished warm-up (`WARM_WAIT_MS`). */
+  warmWaitMs?: number
   pickFiller?: () => string
   pickEarlyFiller?: () => string
-  /** Called once, after the goodbye was handed to the stream, when the call's row is gone (the
-   * 15-minute cap, or the API's end): the owner hangs up. */
-  onEnded?: (reason: 'call_ended') => void
+  /** Called once, after the goodbye was handed to the stream: when the call's row is gone (the
+   * 15-minute cap, or the API's end; `call_ended`) or after the answer to the caller's own
+   * goodbye (`caller_goodbye`, VOICE-24). The owner hangs up once that speech has played. */
+  onEnded?: (reason: 'call_ended' | 'caller_goodbye') => void
 }
 
 export class CallSession {
@@ -96,6 +103,9 @@ export class CallSession {
   readonly date: string
   /** The packs' per-user blocks, read once for the call (`userContextFor`). */
   private userContext: Promise<readonly string[]> | null = null
+  /** The warm-up writing this call's prompt cache, until it settles (`warming`). */
+  private warm: Promise<unknown> | null = null
+  private readonly warmWaitMs: number
   /** Set once the goodbye was spoken: later turns (the caller spoke before the hang-up landed)
    * say nothing. */
   private ended = false
@@ -108,6 +118,7 @@ export class CallSession {
     this.date = dateLine(deps.clock())
     this.maxTurns = options.maxTurns ?? MAX_TURNS_PER_CALL
     this.identityTimeoutMs = options.identityTimeoutMs ?? IDENTITY_TIMEOUT_MS
+    this.warmWaitMs = options.warmWaitMs ?? WARM_WAIT_MS
     this.userContextTimeoutMs = options.userContextTimeoutMs ?? USER_CONTEXT_TIMEOUT_MS
   }
 
@@ -185,6 +196,23 @@ export class CallSession {
     }
   }
 
+  /**
+   * The warm-up the worker started for this call (`warm.ts`). Until it settles, a turn waits for
+   * it, at most `warmWaitMs`, so the first question reads the prompt cache instead of writing it
+   * a second time in parallel (VOICE-25). Its outcome does not matter here: a failed warm-up is
+   * the worker's log line, and the turn goes ahead uncached.
+   */
+  warming(warm: Promise<unknown>): void {
+    const settled = warm.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.warm = settled
+    void settled.then(() => {
+      if (this.warm === settled) this.warm = null
+    })
+  }
+
   /** A user turn: what is spoken goes to `say`; `end` is called once unless a barge-in cancels
    * the turn. Returns the turn's result, or null when it was refused before the model. The turn
    * and its deferred write are tracked so `settle()` can wait for them. */
@@ -242,6 +270,10 @@ export class CallSession {
     // A pending write: "da" carries its id into dispatch, "ne" settles it, anything else is a
     // plain turn with the write still waiting (Part 12b). Decided here, never by the model.
     const confirmation = await this.answerPending(io.userText, ids)
+    // The first question of a call often arrives while the warm-up is still writing the cache.
+    const warmStarted = performance.now()
+    if (this.warm) await withDeadline(this.warm, this.warmWaitMs)
+    const warmWaitMs = Math.round(performance.now() - warmStarted)
     const result = await runVoiceTurn({
       deps: this.deps,
       ctx,
@@ -266,6 +298,13 @@ export class CallSession {
     })
     this.saves = result.persisted
     this.rows.push(...result.rows)
+    // The caller said goodbye and heard the answer to it: the call ends after that line plays,
+    // and anything said before the line drops is not answered (VOICE-24).
+    if (result.outcome === 'completed' && isGoodbye(io.userText)) {
+      this.ended = true
+      log('info', LOG_TAG, 'caller goodbye', { ...ids, turn: this.turns })
+      this.options.onEnded?.('caller_goodbye')
+    }
     // Where a turn's time goes: identity, then the model and tools until the first spoken text,
     // then the rest of the answer; the marks say when each model call and tool round started
     // and ended (`docs/OPS.md` → log fields).
@@ -273,6 +312,7 @@ export class CallSession {
       ...ids,
       turn: this.turns,
       auth_ms: authMs,
+      warm_wait_ms: warmWaitMs,
       first_text_ms: result.firstTextMs,
       first_answer_ms: result.firstAnswerMs,
       total_ms: result.totalMs,

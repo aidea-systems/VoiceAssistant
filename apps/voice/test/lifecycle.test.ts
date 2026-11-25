@@ -2,7 +2,15 @@
 // decisions `agent.ts` wires to the room and session events.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { HANGUP_GRACE_MS, HangUp, NO_SPEECH, participantLeft, sessionErrorAction } from '../src/lifecycle.js'
+import {
+  HANGUP_GRACE_MS,
+  HangUp,
+  NO_SPEECH,
+  participantLeft,
+  sessionErrorAction,
+  sessionErrorFields,
+  SessionErrorRoute,
+} from '../src/lifecycle.js'
 
 describe('sessionErrorAction', () => {
   it('VOICE-12b a recoverable provider error is only logged; an unrecoverable one is spoken and ends the call, unless speech itself failed', () => {
@@ -13,6 +21,40 @@ describe('sessionErrorAction', () => {
     expect(sessionErrorAction({ type: 'tts_error', recoverable: false })).toBe('hang_up')
     // An error event without the flag (a realtime model, not used here) is not recoverable.
     expect(sessionErrorAction({ type: 'realtime_model_error' })).toBe('speak_and_hang_up')
+  })
+})
+
+describe('SessionErrorRoute', () => {
+  it("VOICE-12c a provider failure before the caller is admitted (the greeting, the PIN prompt) goes to the gate's hang-up, after it to the call's", () => {
+    const gate: string[] = []
+    const call: string[] = []
+    const route = new SessionErrorRoute((a) => gate.push(a))
+    expect(route.phase).toBe('gate')
+    route.route('hang_up')
+    route.admitted((a) => call.push(a))
+    expect(route.phase).toBe('call')
+    route.route('speak_and_hang_up')
+    expect(gate).toEqual(['hang_up'])
+    expect(call).toEqual(['speak_and_hang_up'])
+  })
+
+  it('VOICE-12d the log fields name the provider, whether it can recover, the error class and its HTTP status, never a message', () => {
+    class APIStatusError extends Error {
+      statusCode = 401
+    }
+    expect(
+      sessionErrorFields({
+        type: 'tts_error',
+        recoverable: false,
+        error: new APIStatusError('invalid_api_key'),
+      }),
+    ).toEqual({ source: 'tts_error', recoverable: false, reason: 'APIStatusError', status: 401 })
+    expect(sessionErrorFields({ type: 'stt_error' })).toEqual({
+      source: 'stt_error',
+      recoverable: null,
+      reason: null,
+      status: null,
+    })
   })
 })
 

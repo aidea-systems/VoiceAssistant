@@ -151,6 +151,7 @@ export async function openCall(opts: OpenCallOptions = {}): Promise<OpenedCall> 
     pickFiller: () => FILLER,
     pickEarlyFiller: () => EARLY_FILLER,
     ...(opts.userContextTimeoutMs !== undefined ? { userContextTimeoutMs: opts.userContextTimeoutMs } : {}),
+    ...(opts.warmWaitMs !== undefined ? { warmWaitMs: opts.warmWaitMs } : {}),
     ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns } : {}),
     ...(opts.identityTimeoutMs !== undefined ? { identityTimeoutMs: opts.identityTimeoutMs } : {}),
     ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),

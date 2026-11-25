@@ -7,10 +7,9 @@
 // injection surface), so it is read narrowly: the trailing user items only, no system items.
 import { assembleHistory, type HistoryRow, type InMemoryMessage, type MessageRow } from '@va/core'
 
-/** Messages (rows) of the call the model sees at most. */
-export const MAX_MESSAGES = 20
-/** Rough token ceiling for the call's history (chars / 4); the voice prompt keeps answers short. */
-export const HISTORY_CEILING_TOKENS = 20_000
+/** Rough token ceiling for the call's history (chars / 4). A call is short (15 minutes, 50 turns)
+ * and keeps every turn (CORE-16); this only guards against a runaway, far above a real call. */
+export const HISTORY_CEILING_TOKENS = 150_000
 
 /** What this module reads of a LiveKit `ChatItem`: `ChatMessage` has `type: 'message'`, a role
  * and `textContent`; function calls and handoffs have other types and are skipped. */
@@ -39,19 +38,13 @@ export function userTurnOf(items: readonly ChatItemLike[]): string | null {
 export type CallRow = MessageRow & { id: string }
 
 /**
- * The call's history for the model: at most `MAX_MESSAGES` rows, cut on a turn boundary (a
- * `turn_kind: 'user'` row first; the newest turn is always whole, even when it alone is longer),
- * assembled by the engine (unanswered `tool_use` repaired, empty rows dropped, oldest turns
- * dropped above the ceiling).
+ * The call's history for the model: every row of the call, assembled by the engine (unanswered
+ * `tool_use` repaired, empty rows dropped). No window: dropping the oldest turns would change the
+ * first message, and the model refuses its earlier thinking once the conversation before it
+ * differs (CORE-16), so each turn's history starts with the previous one's, unchanged.
  */
-export function callHistory(rows: readonly CallRow[], maxMessages = MAX_MESSAGES): InMemoryMessage[] {
-  let start = rows.length
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i]!.turn_kind !== 'user') continue
-    if (start < rows.length && rows.length - i > maxMessages) break
-    start = i
-  }
-  const kept: HistoryRow[] = rows.slice(start).map((r) => ({
+export function callHistory(rows: readonly CallRow[]): InMemoryMessage[] {
+  const kept: HistoryRow[] = rows.map((r) => ({
     id: r.id,
     role: r.role,
     turn_kind: r.turn_kind,
