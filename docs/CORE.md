@@ -327,9 +327,13 @@ pack's `domainRules` in pack order (`registry.domainRules()`) + presentation, pe
 It is byte-identical per channel, pure (no clock, locale or env) and carries the cache
 breakpoint. `buildUserContext(ctx, packBlocks?)` is the per-user block (`## Korisnik` with
 email and role, plus a scope sentence for members), followed by the packs' per-user context
-blocks as paragraphs (`P04b`), sent as a second, uncached system block. The caller appends
-`dateLine(now)` (`Danas je …`, Europe/Zagreb; pure, the caller passes the clock) as a third
-uncached block.
+blocks as paragraphs (`P04b`), sent as a second, uncached system block. `dateLine(now)`
+(`Danas je …`, Europe/Zagreb; pure, the caller passes the clock) never changes the prompt of an
+open conversation (`API-18`): chat sends `dateContext(messages, now)`, a mid-conversation
+`role: 'system'` message the API stores after the user's message when the newest date message
+names another day; a call fixes the line once at its start as a third block. History replays
+stored system rows in place (`assembleHistory`), leaves out one with no assistant answer after
+it (`dropUnansweredSystem`), and the message cache breakpoint skips a trailing system message.
 
 **Per-user context from the packs.** A pack may add what the caller is most likely to ask
 about, so the model answers in one round instead of a search round plus an answer round

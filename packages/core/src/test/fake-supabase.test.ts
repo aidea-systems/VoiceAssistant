@@ -1,14 +1,10 @@
 // Tests for the fake PostgREST / GoTrue through the real supabase-js clients.
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 
 import { createServiceClient, createUserClient } from '@va/db'
 
 import { ITEMS, MSG_TOOL_RESULT, MSG_USER, SESSION_MEMBER_CHAT, TOKENS, USERS } from './fixtures.js'
 import { db, reset } from './harness.js'
-
-// `user_integrations` is typed once `/db-types` runs with its migration applied (REL-12).
-const untyped = () => createServiceClient() as unknown as SupabaseClient
 
 describe('fake-supabase', () => {
   it('G01: select with eq, ilike, order and limit', async () => {
@@ -91,7 +87,7 @@ describe('fake-supabase', () => {
   })
   it('G07: an upsert on a unique key inserts once, then merges into the same row', async () => {
     reset()
-    const client = untyped()
+    const client = createServiceClient()
     const first = await client
       .from('user_integrations')
       .upsert(
@@ -137,7 +133,7 @@ describe('fake-supabase', () => {
       refresh_token_enc: 'k1:a',
     }
     db.seed('user_integrations', [row])
-    const { error } = await untyped().from('user_integrations').insert(row)
+    const { error } = await createServiceClient().from('user_integrations').insert(row)
     expect(error?.code).toBe('23505')
     expect(db.rows('user_integrations')).toHaveLength(1)
   })

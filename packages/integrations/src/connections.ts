@@ -21,5 +21,13 @@ export async function listConnections(
   const query = integrations(userClient).select('provider, account, status, connected_at').order('provider')
   const { data, error } = await (signal ? query.abortSignal(signal) : query)
   if (error) throw new IntegrationError('store_failed')
-  return data
+  return data.map((row) => {
+    // The CHECKs allow only these values; anything else is a store we do not understand.
+    if (!isProvider(row.provider) || !isStatus(row.status)) throw new IntegrationError('store_failed')
+    return { ...row, provider: row.provider, status: row.status }
+  })
 }
+
+const isProvider = (value: string): value is Provider => value === 'microsoft'
+const isStatus = (value: string): value is IntegrationStatus =>
+  value === 'active' || value === 'reauth_required' || value === 'revoked'

@@ -250,6 +250,18 @@ describe('a spoken turn', () => {
     }
   })
 
+  scenario('API-18 a call that crosses midnight keeps its date: system is byte-identical on every request', async () => {
+    let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
+    anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
+    const call = await openCall({ clock: () => now })
+    await (await ask(call, 'Bok')).done
+    now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
+    await (await ask(call, 'Jeste li još tu?')).done
+    const [one, two] = anthropic.calls.map((c) => c.body.system as Array<{ text: string }>)
+    expect(two).toEqual(one)
+    expect(one!.at(-1)!.text).toBe('Danas je utorak, 24. studenoga 2026.')
+  })
+
   scenario('VOICE-7 the timing line carries the marks with their times, name@ms, in order', async () => {
     anthropic.script(callTools(toolUse('search_items', { query: 'a' })), answer('Da.'))
     const call = await openCall()

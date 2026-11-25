@@ -45,7 +45,13 @@ export type {
 } from './loop/ports.js'
 export { FALLBACK_BETA, modelProfile } from './model.js'
 export type { ModelExtra, ModelProfile } from './model.js'
-export { buildStaticSystemPrompt, buildUserContext, dateLine, DOMAIN_RULES_HR } from './prompts/index.js'
+export {
+  buildStaticSystemPrompt,
+  buildUserContext,
+  dateContext,
+  dateLine,
+  DOMAIN_RULES_HR,
+} from './prompts/index.js'
 export { BufferedSink } from './sinks/buffered.js'
 export { speakable } from './sinks/speakable.js'
 export {

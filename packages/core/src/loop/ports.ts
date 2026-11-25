@@ -39,9 +39,10 @@ export interface ToolResultBlock extends ContentBlock {
   is_error: boolean
 }
 
-/** One message of the conversation as sent to the model. */
+/** One message of the conversation as sent to the model. `system` is a mid-conversation
+ * context message (the date, API-18): after a user message, stored and replayed like any row. */
 export interface InMemoryMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: ContentBlock[]
 }
 
@@ -117,8 +118,8 @@ export interface ConfirmationStore {
 
 /** One `ai_messages` row without its session (the store knows it). */
 export interface MessageRow {
-  role: 'user' | 'assistant'
-  turn_kind: 'user' | 'assistant' | 'tool_result'
+  role: 'user' | 'assistant' | 'system'
+  turn_kind: 'user' | 'assistant' | 'tool_result' | 'context'
   content: Json
   parent_id: string | null
   model?: string | null

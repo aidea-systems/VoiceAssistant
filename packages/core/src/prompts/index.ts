@@ -2,10 +2,12 @@
 // pack's, in pack order) + presentation. Pure and
 // deterministic given the channel and the context object: no clock, locale or env reads. The
 // static block is byte-identical per channel and carries the cache breakpoint; the per-user
-// block follows it uncached; the date line (`Danas je …`, Europe/Zagreb) is appended by the
-// caller as a third, uncached block.
+// block follows it uncached. The date line (`Danas je …`, Europe/Zagreb) never changes the
+// prompt of an open conversation: chat sends it as a stored system message when the day
+// changes (`dateContext`, API-18); a call fixes it once as a third block.
 import type { AuthContext } from '../auth.js'
 import type { Channel } from '../channel.js'
+import type { InMemoryMessage } from '../loop/ports.js'
 import { CHAT_INTRO_HR, CHAT_PRESENTATION_HR } from './chat.hr.js'
 import { DOMAIN_RULES_HR } from './domain-rules.hr.js'
 import { VOICE_INTRO_HR, VOICE_PRESENTATION_HR } from './voice.hr.js'
@@ -27,8 +29,7 @@ export function buildStaticSystemPrompt(channel: Channel, packRules: readonly st
   return `${INTRO[channel]}\n\n${rules}\n\n${PRESENTATION[channel]}`
 }
 
-/** `Danas je …` for the Europe/Zagreb day of `now`: the third, uncached system block every
- * channel appends after the per-user block. Pure: the caller passes the clock. */
+/** `Danas je …` for the Europe/Zagreb day of `now`. Pure: the caller passes the clock. */
 export function dateLine(now: Date): string {
   // hr-HR renders "srijeda, 28. listopada 2026." with its own full stop.
   const day = new Intl.DateTimeFormat('hr-HR', { timeZone: 'Europe/Zagreb', dateStyle: 'full' }).format(now)
@@ -51,4 +52,17 @@ export function buildUserContext(
     `## Korisnik\nKorisnik: ${identifier}, uloga: ${ctx.role}.${scope}`,
     ...packBlocks.filter(Boolean),
   ].join('\n\n')
+}
+
+/**
+ * The date as a mid-conversation system message, when the conversation has not been told today's
+ * date yet (its newest system message says another day, or it has none); null otherwise. The
+ * caller stores it after the user's message, so every later request replays it unchanged and the
+ * system prompt never moves (API-18).
+ */
+export function dateContext(messages: readonly InMemoryMessage[], now: Date): InMemoryMessage | null {
+  const line = dateLine(now)
+  const last = messages.findLast((m) => m.role === 'system')
+  const said = last?.content.find((b) => b.type === 'text')?.text
+  return said === line ? null : { role: 'system', content: [{ type: 'text', text: line }] }
 }

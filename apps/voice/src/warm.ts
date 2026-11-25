@@ -22,9 +22,11 @@ export async function warm(
   ctx: AuthContext,
   userContext: readonly string[] = [],
   allowed: AllowedTools = null,
+  /** The call's date line (`CallSession.date`), so the warm-up writes the cache a turn reads. */
+  date?: string,
 ): Promise<WarmResult> {
   const t0 = performance.now()
-  const config = voiceLoopConfig(deps, ctx, undefined, userContext, allowed)
+  const config = voiceLoopConfig(deps, ctx, undefined, userContext, allowed, date)
   const profile = modelProfile(config.settings)
   const params = {
     model: config.settings.model,

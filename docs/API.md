@@ -79,8 +79,13 @@ created a session deletes that session again. `client_context.route` is sanitise
 without query or hash, ≤ 200 characters) and reaches the tools as `extras.clientContext.route`,
 never the model: the text is sent exactly as the row keeps it. Every request must replay the
 earlier ones append-only, because Opus 5.5 binds each thinking block to the conversation before
-it and answers 400 "bound to a different conversation" when an earlier message differs (`API-17`;
-the date line in `system` is the one known exception left, `API-18`).
+it and answers 400 "bound to a different conversation" when an earlier message differs or
+`system` changes (`API-17`, `API-18`). So `system` is the static prompt and the user block only,
+and the date (`Danas je …`) is a `role: 'system'` message after the user's message, stored as a
+`turn_kind: 'context'` row whenever the session's newest date message names another day (the
+first turn of every session, then the first turn of each new day); every later request replays
+it. A stored date message whose turn failed before the model answered is left out of the next
+request, which sends today's again.
 
 The write protocol (Part 12, decision 0015): `confirm` or `decline` (a uuid, never both, never
 with `session_id: null`) answers a pending `confirm` event with the user's words in `message`.
@@ -234,8 +239,11 @@ when sent (≤ 128 characters) and generated otherwise; it is on every response.
 ```
 cp apps/api/env.example apps/api/.env       # fill SUPABASE_* from `supabase status`, ANTHROPIC_API_KEY
 supabase start
-pnpm --filter @va/api dev                   # tsx watch src/index.ts on PORT (3000)
+pnpm --filter @va/api dev                   # tsx watch on PORT (3000), reading apps/api/.env when it exists
 ```
+
+The `dev` script passes `--env-file-if-exists=.env` to Node: `apps/api/.env` is read when present
+and skipped otherwise, and a variable already exported in the shell wins over the file.
 
 The container (`apps/api/Dockerfile`) installs the workspace with the frozen lockfile and runs
 `node --import tsx src/index.ts` from `apps/api` (where `tsx` resolves), because the workspace

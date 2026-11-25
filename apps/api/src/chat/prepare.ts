@@ -5,7 +5,14 @@
 // the timeout in its log line, so a step's own failure line may precede it.
 import { z } from 'zod'
 
-import { type AuthContext, assembleHistory, type ChannelSettings, type InMemoryMessage, log } from '@va/core'
+import {
+  type AuthContext,
+  assembleHistory,
+  type ChannelSettings,
+  dateContext,
+  type InMemoryMessage,
+  log,
+} from '@va/core'
 import type { Json } from '@va/db'
 
 import { failResponse } from '../errors.js'
@@ -219,12 +226,38 @@ export async function prepareChat(input: PrepareInput): Promise<ChatPrep | Respo
     }
     messages.push({ role: 'user', content: [{ type: 'text', text: userMessage }] })
 
+    // 7. the date, when this conversation has not been told today's yet: a system message after
+    // the user's, stored like any row so every later request replays it unchanged. The system
+    // prompt itself never changes, so a chat that crosses midnight keeps its thinking (API-18).
+    let lastInsertedId = userRow.id
+    const date = dateContext(messages, now)
+    if (date) {
+      const { data: dateRow, error: dateError } = await ctx.serviceClient
+        .from('ai_messages')
+        .insert({
+          session_id: sessionId,
+          role: 'system',
+          turn_kind: 'context',
+          content: date.content as Json,
+          parent_id: userRow.id,
+        })
+        .select('id')
+        .abortSignal(signal)
+        .single()
+      if (dateError || !dateRow) {
+        log('error', '[api]', 'date row insert failed', { ...scoped, code: dateError?.code ?? null })
+        return await cleanup('internal_error')
+      }
+      messages.push(date)
+      lastInsertedId = dateRow.id
+    }
+
     return {
       sessionId,
       newlyCreatedSession,
       messages,
       userMessage,
-      lastInsertedId: userRow.id,
+      lastInsertedId,
       route,
       confirmation,
     }

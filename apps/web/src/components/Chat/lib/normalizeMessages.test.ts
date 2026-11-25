@@ -18,8 +18,8 @@ const ids: ViewIds = { genId: () => `g${++counter}`, now: () => '2026-10-29T10:0
 
 function row(
   id: string,
-  role: 'user' | 'assistant',
-  turnKind: 'user' | 'assistant' | 'tool_result',
+  role: 'user' | 'assistant' | 'system',
+  turnKind: 'user' | 'assistant' | 'tool_result' | 'context',
   content: unknown[],
   parentId: string | null,
   createdAt: string,
@@ -111,6 +111,24 @@ describe('normalizeFromPersistedRows', () => {
       status: 'pending',
     })
     expect(normalizeFromPersistedRows([])).toEqual([])
+  })
+
+  it('API-18: the stored date (a system row between the question and the answer) is never shown', () => {
+    const dated = [
+      row('u1', 'user', 'user', [{ type: 'text', text: 'Bok' }], null, '2026-11-24T22:59:00Z'),
+      row(
+        'd1',
+        'system',
+        'context',
+        [{ type: 'text', text: 'Danas je utorak, 24. studenoga 2026.' }],
+        'u1',
+        '2026-11-24T22:59:00.1Z',
+      ),
+      row('a1', 'assistant', 'assistant', [{ type: 'text', text: 'Bok!' }], 'd1', '2026-11-24T22:59:01Z'),
+    ]
+    const out = normalizeFromPersistedRows(dated)
+    expect(out.map((m) => m.kind)).toEqual(['user', 'assistant'])
+    expect(JSON.stringify(out)).not.toContain('Danas je')
   })
 })
 

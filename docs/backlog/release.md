@@ -1,6 +1,6 @@
 # Backlog — release
 
-Ids: REL-16 (next free)
+Ids: REL-18 (next free)
 
 Things written but not live: migrations to apply (dev first, with the check to run after), secrets
 to set, and checks nobody has run. Tick an item when it is done on every environment it names.
@@ -8,6 +8,22 @@ to set, and checks nobody has run. Tick an item when it is done on every environ
 three sets of checks) and says how to paste the results back.
 
 ## Open
+
+- [ ] REL-17 · API-18: apply `20261124130000_system_messages.sql` to the dev project **before**
+      deploying the API that carries the fix (the old CHECK refuses the date rows it writes, and
+      every chat turn would fail). By the operator, `supabase db push`. Check after applying: as
+      the service role, an insert with `role = 'system', turn_kind = 'context'` into a test
+      session succeeds and one with `role = 'system', turn_kind = 'user'` is refused with `23514`
+      (or simply: after the deploy, a new chat answers and its rows show a `context` row after the
+      first user row). No generated type changes.
+
+- [ ] REL-16 · OPS-4: apply `20261124120000_session_retention.sql` to the dev project (by the
+      operator, `supabase db push`; pg_cron is already enabled there, REL-1). Check after
+      applying, in the SQL editor: `select jobname, schedule, active from cron.job where jobname
+  = 'session-retention-sweep'` gives one row, `15 3 * * *`, active (if none, run the
+      migration's last DO block again); `select public.sweep_expired_sessions()` answers a number
+      (0 while nothing is old enough); the next day the newest `cron.job_run_details` row for the
+      job has `status = 'succeeded'`. No generated type changes.
 
 - [ ] Part 1 / Part 7: create branch protection on `main` with the Actions job checks `test`, `db`,
       `docker (api)`, `docker (voice)` and `docker (web)` as required checks, and enable Dependabot
@@ -44,7 +60,7 @@ three sets of checks) and says how to paste the results back.
       drop the hand-written types in `apps/voice/src/phone/db.ts` for the generated ones. Then
       enrol the pilot caller (`docs/RELEASE-RUNBOOK.md` → Enrolling a caller).
 
-- [ ] REL-12 · Part 13a: apply `20261104100000_user_integrations.sql` to the dev project (by the
+- [x] REL-12 · Part 13a: apply `20261104100000_user_integrations.sql` to the dev project (by the
       operator, `supabase db push`). Check after applying: as a signed-in user
       `select status from user_integrations` returns 0 rows and
       `select refresh_token_enc from user_integrations` is refused with `42501`; as the service role an insert with
@@ -52,8 +68,13 @@ three sets of checks) and says how to paste the results back.
       `packages/db/src/database.ts`, and drop the hand-written table types in
       `packages/integrations/src/db.ts` (and the untyped cast in
       `packages/core/src/test/fake-supabase.test.ts`) for the generated ones.
+      Progress 2026-11-24: the table exists on `kdplqbldohrzsewhckgl` (a live connect wrote its
+      row). Done 2026-11-24: `database.ts` already carried the table (generated with #39), so
+      `@va/integrations` now reads it through the generated `Database` and the casts are gone;
+      the after-apply SQL checks were not run one by one on the project (pgTAP
+      `user_integrations` covers them locally, and the live connect wrote and revoked a row).
 
-- [ ] REL-13 · Part 13a: the first live connect, on a developer machine, once the admin's reply
+- [x] REL-13 · Part 13a: the first live connect, on a developer machine, once the admin's reply
       (`docs/requests/entra-admin-request.md`) is in: `MS_TENANT_ID`, `MS_CLIENT_ID`,
       `MS_CLIENT_SECRET` from it, `MS_REDIRECT_URI=http://localhost:3000/integrations/microsoft/callback`,
       a generated `INTEGRATIONS_KEY`, `WEB_APP_URL=http://localhost:5173` in `apps/api/.env`, the
@@ -74,6 +95,12 @@ three sets of checks) and says how to paste the results back.
       confirmed flag, and the confirmed reply reached only the `From`, not the `Reply-To`). Found
       on the way: `API-17`, `API-19` (fixed), `API-18`, `API-20` (open). Left: the production
       redirect URI and env with `REL-9`, and `OPS-4` / `OPS-5` before the director's mailbox.
+      Done 2026-11-24 in production: the redirect `https://34-141-30-245.sslip.io/integrations/
+    microsoft/callback` registered under Web, the six variables in `/etc/va/api.env` and the
+      four in `/etc/va/voice.env` with a production key of its own, api and voice recreated
+      (`"microsoft":"configured"`); the operator connected from the Vercel PWA (`active`, `k1:`),
+      listed mail and read a week's calendar in one call. `OPS-4` / `OPS-5` still come before
+      the director's mailbox.
 
 - [ ] REL-15 · Part 14: the Landmark live check, once David has carried out
       `docs/requests/landmark-assistant-api-request.md` on Landmark's `feat/assistant-api` and
@@ -99,7 +126,7 @@ three sets of checks) and says how to paste the results back.
       200 with the tool name, Landmark's `[assistant-api]` lines carry the mapped user id, and
       neither carries an address or a token.
 
-- [ ] REL-14 · Part 13a, and a precondition of Part 14: public sign-up off on every Supabase
+- [x] REL-14 · Part 13a, and a precondition of Part 14: public sign-up off on every Supabase
       project the assistant uses (Dashboard → Authentication → Sign In / Providers → "Allow new
       users to sign up" off; users are invited), and email confirmation stays on. The Outlook
       callback requires the user's confirmed email to equal the mailbox's UPN, and Landmark's
@@ -108,6 +135,8 @@ three sets of checks) and says how to paste the results back.
       their mailbox or their Landmark data. Check: a `POST` to
       `$SUPABASE_URL/auth/v1/signup` with the anon key as `apikey` and any email and password
       answers `422` with `signup_disabled` (`docs/RELEASE-RUNBOOK.md` → Connecting Outlook, B).
+      Done 2026-11-24 on `kdplqbldohrzsewhckgl` (the project the VM uses): sign-up off, the
+      `curl` answered `signup_disabled`, confirmation stays on.
 
 - [x] REL-11 · Part 12a: apply `20261103150000_tool_confirmations.sql` to the dev project (by the
       operator, `supabase db push`). Check after applying: as a signed-in user

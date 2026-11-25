@@ -202,9 +202,9 @@ harness prompt); `REL-6` holds the first run.
 | Telephony    | Twilio, a Croatian `+385` number (regulatory bundle), trunk region Dublin or Frankfurt → LiveKit's EU SIP endpoint (Part 11)                    | any EU number first; Telnyx                                                   | LiveKit's EU trunk guide is written against Twilio; a local number is what drivers save in contacts                              |
 | LiveKit      | LiveKit Cloud, EU (Frankfurt is what the live checklist ran against, `docs/VOICE.md`)                                                           | self-hosted LiveKit on the VM (later, if egress cost matters)                 | measured; recording off at the project                                                                                           |
 
-The first deploy is written out step by step in `docs/DEPLOY-RUNBOOK.md`. In order (`REL-9`;
-the migrations, pg_cron and the sweep were applied to the dev project on 2026-11-03, `REL-1`,
-`REL-3`, `REL-7`): set the
+The first deploy is written out step by step in `docs/DEPLOY-RUNBOOK.md` (done 2026-11-06 on
+the Google Cloud VM; the migrations, pg_cron and the voice-calls sweep were applied to the dev
+project on 2026-11-03, `REL-1`, `REL-3`, `REL-7`). In order: set the
 Auth site URL and redirect URLs to the PWA origin (`REL-8`); create the LiveKit project (EU) and its API
 key; put the secrets from the matrix into the host's store; build the two images from the
 tagged commit and start them with `CORS_ORIGINS` set to the PWA origin and `VOICE_AGENT_NAME` =
@@ -213,22 +213,28 @@ host; then the smoke in the runbook (`/health`, one streamed turn, one call) and
 installability audit (`REL-4`). Rolling back is starting the previous image tag; migrations are
 forward-only, so a schema rollback is a new migration.
 
-**Sub-processors** to record for GDPR (Croatia / EU), with the transfer basis:
+**Sub-processors** to record for GDPR (Croatia / EU), with the transfer basis. "DPA accepted on"
+is filled in by whoever signs for the company (`OPS-5`; the one-page form is
+`docs/requests/dpa-checklist.md`):
 
-| Processor  | Role                                     | Region                   | Transfer                                                         |
-| ---------- | ---------------------------------------- | ------------------------ | ---------------------------------------------------------------- |
-| Supabase   | database, auth, storage                  | EU (Frankfurt)           | none                                                             |
-| Anthropic  | the model (chat and voice turns)         | US processing            | DPA with SCCs; no training on API data under its terms           |
-| LiveKit    | WebRTC media, agent dispatch             | EU region; recording off | DPA; media stays in region, metadata may not                     |
-| Soniox     | speech-to-text                           | EU host (`stt-rt-v5`)    | DPA                                                              |
-| ElevenLabs | text-to-speech                           | US                       | DPA with SCCs (a transfer: the spoken answer text leaves the EU) |
-| Google     | the API and the worker (Compute Engine)  | EU (Frankfurt)           | Cloud Data Processing Addendum with SCCs (US company, EU region) |
-| Vercel     | the PWA (static files only)              | EU edge, US company      | DPA with SCCs; no user data is stored there                      |
-| Twilio     | the phone number and SIP trunk (Part 11) | EU trunk region          | DPA with SCCs; call metadata and audio transit the trunk         |
+| Processor  | Role                                                                                     | Region                             | Transfer                                                                                                                                                               | DPA accepted on |
+| ---------- | ---------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Supabase   | database, auth, storage: every conversation and the sealed mail tokens                   | EU (Frankfurt)                     | none                                                                                                                                                                   |                 |
+| Anthropic  | the model: chat and call turns, including mail and calendar content read for the user    | US processing                      | DPA with SCCs; no training on API data under its terms                                                                                                                 |                 |
+| LiveKit    | WebRTC media, agent dispatch                                                             | EU region; recording off           | DPA; media stays in region, metadata may not                                                                                                                           |                 |
+| Soniox     | speech-to-text                                                                           | EU host (`stt-rt-v5`)              | DPA                                                                                                                                                                    |                 |
+| ElevenLabs | text-to-speech                                                                           | US                                 | DPA with SCCs (a transfer: the spoken answer text, mail content included, leaves the EU)                                                                               |                 |
+| Google     | the API and the worker (Compute Engine)                                                  | EU (Frankfurt)                     | Cloud Data Processing Addendum with SCCs (US company, EU region)                                                                                                       |                 |
+| Vercel     | the PWA (static files only)                                                              | EU edge, US company                | DPA with SCCs; no user data is stored there                                                                                                                            |                 |
+| Twilio     | the phone number and SIP trunk (Part 11)                                                 | EU trunk region                    | DPA with SCCs; call metadata and audio transit the trunk                                                                                                               |                 |
+| Microsoft  | the mailbox and calendar read and replied to as the user (Graph, Entra sign-in; Part 13) | the company's Microsoft 365 tenant | already the company's processor for Microsoft 365 (Microsoft Products and Services DPA); the assistant adds no new Microsoft processing, it acts as the signed-in user |                 |
 
+Mail and calendar content leaves Microsoft only when the user asks the assistant about it: it then
+reaches Anthropic (the model) and, on a call, ElevenLabs (the spoken answer), and is kept with the
+conversation for its retention period. Landmark is the company's own system, not a processor.
 Audio recording stays off at LiveKit and in the worker (`record: false`); only the transcripts
-the engine persists as `ai_messages` rows exist. Retention for `channel = 'voice'` rows is an
-open decision (`OPS-4`, `docs/SECURITY.md`); the DPA list is `OPS-5`.
+the engine persists as `ai_messages` rows exist. Retention: 30 days for calls, 12 months for chat
+(`OPS-4`, `docs/SECURITY.md` → Personal data).
 
 ## Runbook
 

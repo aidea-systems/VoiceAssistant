@@ -149,6 +149,8 @@ export function normalizeFromPersistedRows(
 function normalizeBranch(rows: MessageRow[]): RenderMessage[] {
   const out: RenderMessage[] = []
   for (const row of walkActivePath(rows, computeLeaf(rows))) {
+    // A system row is context for the model (the date, API-18), never a bubble.
+    if (row.role === 'system') continue
     const blocks = blocksOf(row)
     if (row.role === 'user') {
       if (row.turn_kind === 'tool_result') {

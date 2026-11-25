@@ -52,6 +52,6 @@ Rank by what goes wrong if the item is left, then by how small the job is.
 
 1. `CORE-1` native review of every Croatian string before a user hears or reads one
 2. `REL-9` the first deploy on the hosts of decision 0013 (`OPS-3` / `VOICE-1` are decided), before the phone channel's live checklist
-3. `OPS-4` / `OPS-5` retention for voice rows and the DPA list, both needed before a trial under GDPR
+3. `REL-16` / `OPS-5` apply the retention sweep and sign the DPAs, both needed before a trial under GDPR
 4. `VOICE-8` the first-sound lever
 5. `DB-1` local Postgres crash on a denied function call (upstream; tests work around it)

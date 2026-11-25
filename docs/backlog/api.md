@@ -6,22 +6,6 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
 
 ## Open
 
-### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
-
-- **Check:** Code reading (same mechanism as `API-17`, confirmed live on 2026-11-23)
-- **Where:** `apps/api/src/chat/stream.ts` (`dateLine(deps.clock())` as the third `system`
-  block, re-rendered on every request); `apps/voice/src/config.ts` does the same per call
-- **What happens:** Opus 5.5 binds each thinking block to the `system` prompt, the tools and every
-  earlier message. When the date changes (midnight in Zagreb) the `system` prompt differs, and the
-  first request after it answers 400 "bound to a different conversation"; the chat shows
-  "Interna greška pri pripremi upita" on every later turn of that session. A call that spans
-  midnight is exposed the same way, far less likely
-- **Fix direction:** keep `system` frozen per session: render the date once into an appended,
-  persisted context (a text block on the user row the web does not show, or a mid-conversation
-  `role: "system"` message saved with the history) when it differs from the last one sent; as a
-  safety net consider `thinking.block_binding.prefix_mismatch_behavior: "drop_block"` (beta
-  `thinking-binding-controls-2026-08-01`) with `input_transformations` logged, not as the fix
-
 ### API-16 · Low · No daily cap on replies the assistant sends
 
 - **Check:** By design (Part 13c, the user's choice on 2026-11-04)
@@ -121,6 +105,10 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
+
+Fixed on `fix/date-line`: chat's `system` no longer carries the date; it is a stored `role: 'system'` message added when the day changes (migration `20261124130000_system_messages.sql`, `REL-17`), and a call fixes its date at the start. Tests `API-18` in api, voice, core and web.
 
 ### API-20 · Medium · A week's calendar is seven parallel Graph calls, and Outlook throttles the extra ones
 

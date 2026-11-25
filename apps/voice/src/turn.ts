@@ -107,6 +107,8 @@ export interface VoiceTurnInput {
   userContext?: readonly string[]
   /** The packs' per-user gate for this turn (`CallSession.allowedToolsFor`); null is no restriction. */
   allowed?: AllowedTools
+  /** The call's date line, fixed at its start (`CallSession.date`, API-18). */
+  date?: string
 }
 
 /** A loop mark and when it fired, in ms since the turn started. */
@@ -137,7 +139,14 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
   const { deps, ctx, sessionId, userText, requestId, signal } = input
   const t0 = performance.now()
   const ids = { request_id: requestId, user_id: ctx.userId, session_id: sessionId }
-  const config = voiceLoopConfig(deps, ctx, input.confirmations, input.userContext, input.allowed ?? null)
+  const config = voiceLoopConfig(
+    deps,
+    ctx,
+    input.confirmations,
+    input.userContext,
+    input.allowed ?? null,
+    input.date,
+  )
   const settings = deps.settings
 
   const sink = new SpokenTextSink(input.say, input.end, {

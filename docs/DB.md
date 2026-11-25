@@ -76,21 +76,22 @@ where `external_id` is not null.
 One Anthropic message per row. A session is a tree through `parent_id`; the active branch is the
 walk from the newest row (the leaf) to the root.
 
-| Column                                    | Type        | Notes                                                                      |
-| ----------------------------------------- | ----------- | -------------------------------------------------------------------------- |
-| `id`                                      | uuid        | PK                                                                         |
-| `session_id`                              | uuid        | FK `ai_sessions` ON DELETE CASCADE                                         |
-| `role`                                    | text        | the Anthropic wire role: `user` or `assistant`                             |
-| `turn_kind`                               | text        | `user` (a real turn), `assistant`, `tool_result`; rate limits count `user` |
-| `content`                                 | jsonb       | Anthropic content blocks; attachments will live inside this shape          |
-| `parent_id`                               | uuid        | FK self ON DELETE SET NULL; null on the first row                          |
-| `model`, `stop_reason`                    | text        | assistant rows                                                             |
-| `input_tokens`, `output_tokens`           | integer     | assistant rows                                                             |
-| `cache_read_tokens`, `cache_write_tokens` | integer     | prompt-cache counts, for cost dashboards                                   |
-| `created_at`                              | timestamptz |                                                                            |
+| Column                                    | Type        | Notes                                                                                 |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| `id`                                      | uuid        | PK                                                                                    |
+| `session_id`                              | uuid        | FK `ai_sessions` ON DELETE CASCADE                                                    |
+| `role`                                    | text        | the Anthropic wire role: `user`, `assistant`, or `system` (context, API-18)           |
+| `turn_kind`                               | text        | `user` (a real turn), `assistant`, `tool_result`, `context`; rate limits count `user` |
+| `content`                                 | jsonb       | Anthropic content blocks; attachments will live inside this shape                     |
+| `parent_id`                               | uuid        | FK self ON DELETE SET NULL; null on the first row                                     |
+| `model`, `stop_reason`                    | text        | assistant rows                                                                        |
+| `input_tokens`, `output_tokens`           | integer     | assistant rows                                                                        |
+| `cache_read_tokens`, `cache_write_tokens` | integer     | prompt-cache counts, for cost dashboards                                              |
+| `created_at`                              | timestamptz |                                                                                       |
 
 Constraint `ai_messages_role_kind`: an `assistant` row has `turn_kind = 'assistant'`; a `user`
-row has `turn_kind` `user` or `tool_result`. Indexes on `(session_id, created_at)` and
+row has `turn_kind` `user` or `tool_result`; a `system` row has `turn_kind = 'context'` (the
+chat's date message, `20261124130000_system_messages.sql`, `API-18`). Indexes on `(session_id, created_at)` and
 `(parent_id)`. The `ai_messages_touch_session` trigger bumps the session's `updated_at` on
 insert so the list sorts by activity.
 
@@ -107,6 +108,13 @@ start + 15 min); the constraint `voice_calls_expires_within_cap`,
 enabled (the migration skips the schedule with a notice otherwise; re-run its last block after
 enabling pg_cron). The guard checks `pg_extension`, not `to_regproc('cron.schedule')`: that name
 is overloaded, so `to_regproc` is NULL even with pg_cron installed.
+
+**Retention** (`20261124120000_session_retention.sql`, `OPS-4`): `public.sweep_expired_sessions()`
+deletes every session whose last activity (`updated_at`, moved by each new message) is older than
+30 days for `voice` and `phone` or 12 months for `chat` and `whatsapp`, and returns the count; the
+cascades take its messages, call row and confirmations. No API role has EXECUTE; the
+`session-retention-sweep` pg_cron job runs it daily at 03:15 UTC as the owner, guarded like
+`voice-calls-sweep`.
 
 ### `voice_caller_identities` (`20261103120000_phone_channel.sql`, Part 11)
 
@@ -259,6 +267,8 @@ import type { Database, Tables } from '@va/db'
 | `voice_caller_identities`  | nothing for authenticated or anon, the owner still reads `caller_identity_id` on their own session; the service role resolves a number and records failures and the lock; E.164 and a non-negative counter enforced; one active row per number, an inactive duplicate allowed; deleting the identity nulls the session's pointer, deleting the user cascades                           |
 | `tool_confirmations`       | the owner reads their own rows and cannot write; another user sees none; anon nothing; the service role's conditional consume wins once, a changed input does not match, outcomes are constrained, an expired row is not consumable; cascade with the session                                                                                                                          |
 | `user_integrations`        | the owner reads their row's state and is refused every token column and `select *`; no owner insert, update or delete; another user sees none; anon nothing; one row per user and provider; provider and status constrained; an active row holds a refresh token, a revoked row none; a failed refresh and a disconnect are allowed updates; `updated_at` moves; cascade with the user |
+| `api_18_system_messages`   | a `system`/`context` row is stored by the service role and walked by `ai_session_history` in its place; every other pairing of role and turn_kind refused; the owner reads it like their other rows                                                                                                                                                                                    |
+| `ops_4_session_retention`  | the sweep deletes the sessions past 30 days (voice, phone) or 12 months (chat, whatsapp) with their messages, call row and confirmations, keeps younger ones, returns the count, finds nothing on a second run; no EXECUTE for anon, authenticated or service_role; the daily job where pg_cron exists                                                                                 |
 | `demo_tables`              | a member reads the catalogue and writes only their own notes, never an item; anon nothing; the service role seeds; deleting an item deletes its notes                                                                                                                                                                                                                                  |
 
 Each file is one transaction that rolls back. See `docs/TESTING.md` → Database tests for how to

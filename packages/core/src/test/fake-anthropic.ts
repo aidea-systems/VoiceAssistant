@@ -218,7 +218,9 @@ interface AnyBlock {
  * The shape rules of the real Messages API that an engine can break: the conversation starts
  * with a user turn; every `tool_use` in an assistant turn is answered by a `tool_result` with
  * the same id in the immediately following user turn, which answers nothing else; and a
- * `tool_use` or `tool_result` block anywhere needs `tools` on the request. The real API returns
+ * `tool_use` or `tool_result` block anywhere needs `tools` on the request; a mid-conversation
+ * `system` message holds text only, follows a user message and is the last message or followed
+ * by an assistant one. The real API returns
  * 400 invalid_request_error for each. `tools` is the request's array (`[]` when the request
  * carries none); when the caller passes nothing the tools rule is not applied, so a chain can
  * be checked for its shape alone.
@@ -234,6 +236,13 @@ export function validateConversation(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!
     const next = messages[i + 1]
+    if (m.role === 'system') {
+      if (messages[i - 1]?.role !== 'user')
+        return `messages.${i}: a \`system\` message must follow a \`user\` message`
+      if (next && next.role !== 'assistant')
+        return `messages.${i}: a \`system\` message must be last or be followed by an \`assistant\` message`
+      if (blocks(m).some((b) => b.type !== 'text')) return `messages.${i}: a \`system\` message holds text only`
+    }
     if (tools && tools.length === 0) {
       const j = blocks(m).findIndex((b) => b.type === 'tool_use' || b.type === 'tool_result')
       if (j >= 0) {

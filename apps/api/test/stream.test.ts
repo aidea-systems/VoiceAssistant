@@ -64,7 +64,7 @@ describe('POST /chat stream', () => {
   )
 
   scenario(
-    'C02 a plain answer: deltas, then turn with the row id, then done; rows [user, assistant]',
+    'C02 a plain answer: deltas, then turn with the row id, then done; rows [user, context, assistant]',
     async () => {
       anthropic.script(answer('Bok! Kako mogu pomoći?'))
       const sse = await chat({ session_id: null, message: 'Hej' })
@@ -73,13 +73,13 @@ describe('POST /chat stream', () => {
       expect(deltas.length).toBeGreaterThan(1)
       expect(deltas.join('')).toBe('Bok! Kako mogu pomoći?')
       const rows = rowsOf(sessionId)
-      expect(kinds(sessionId)).toEqual(['user', 'assistant'])
+      expect(kinds(sessionId)).toEqual(['user', 'context', 'assistant'])
       expect(sse.types.filter((t) => t !== 'delta')).toEqual(['session', 'turn', 'done'])
       expect(sse.events.find((e) => e.data.type === 'turn')!.data).toEqual({
         type: 'turn',
         role: 'assistant',
         text: 'Bok! Kako mogu pomoći?',
-        message_id: rows[1]!.id,
+        message_id: rows[2]!.id,
       })
       expect(sse.events.at(-1)!.data).toEqual({
         type: 'done',
@@ -103,12 +103,12 @@ describe('POST /chat stream', () => {
         message: 'Što je ovo?',
         client_context: { route: '/items/5?x=1' },
       })
-      const sent = anthropic.calls[0]!.body.messages.at(-1)!.content as Array<{ text: string }>
+      const sent = anthropic.calls[0]!.body.messages.at(-2)!.content as Array<{ text: string }>
       expect(sent).toEqual([{ type: 'text', text: 'Što je ovo?', cache_control: { type: 'ephemeral' } }])
       const row = rowsOf(sse.events[0]!.data.session_id as string)[0]!
       expect(row.content).toEqual([{ type: 'text', text: 'Što je ovo?' }])
       await chat({ session_id: null, message: 'x', client_context: { route: 'javascript:alert(1)' } })
-      expect((anthropic.calls[1]!.body.messages.at(-1)!.content as Array<{ text: string }>)[0]!.text).toBe(
+      expect((anthropic.calls[1]!.body.messages.at(-2)!.content as Array<{ text: string }>)[0]!.text).toBe(
         'x',
       )
     },
@@ -143,6 +143,61 @@ describe('POST /chat stream', () => {
   )
 
   scenario(
+    'API-18 a chat that crosses midnight keeps system frozen and replays append-only; the new date arrives as a system message',
+    async () => {
+      let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
+      const clocked = buildApp({ clock: () => now })
+      anthropic.script(
+        {
+          content: [{ type: 'thinking', thinking: '', signature: 'sig-1' }, text('Dobra večer.')],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 100, output_tokens: 20 },
+        },
+        answer('Dobro jutro.'),
+      )
+      const first = await chat({ session_id: null, message: 'Bok' }, { app: clocked })
+      const sessionId = first.events[0]!.data.session_id as string
+      now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day in Zagreb
+      await chat({ session_id: sessionId, message: 'Koji je danas dan?' }, { app: clocked })
+
+      const [one, two] = [anthropic.calls[0]!.body, anthropic.calls[1]!.body]
+      expect(two.system).toEqual(one.system)
+      const before = withoutCacheControl(one.messages)
+      const after = withoutCacheControl(two.messages)
+      expect(after.slice(0, before.length)).toEqual(before)
+      expect(before.map((m) => m.role)).toEqual(['user', 'system'])
+      expect(JSON.stringify(before[1])).toContain('24. studenoga 2026')
+      expect(after.slice(before.length).map((m) => m.role)).toEqual(['assistant', 'user', 'system'])
+      expect(JSON.stringify(after.at(-1))).toContain('25. studenoga 2026')
+      // The date rows are stored, so the next turn replays them, and they are no user turns.
+      const rows = rowsOf(sessionId)
+      expect(rows.map((r) => r.turn_kind)).toEqual([
+        'user',
+        'context',
+        'assistant',
+        'user',
+        'context',
+        'assistant',
+      ])
+    },
+  )
+
+  scenario(
+    'API-18 a turn that failed after its date row does not break the next one: the unanswered date is left out and today is sent again',
+    async () => {
+      anthropic.script({ error: { status: 400, type: 'invalid_request_error', message: 'scripted' } })
+      const failed = await chat({ session_id: null, message: 'Bok' })
+      expect(failed.types).toContain('error')
+      const sessionId = failed.events[0]!.data.session_id as string
+      expect(kinds(sessionId)).toEqual(['user', 'context'])
+      anthropic.script(answer('Bok!'))
+      const next = await chat({ session_id: sessionId, message: 'Bok?' })
+      expect(next.types).toContain('done')
+      expect(anthropic.calls[1]!.body.messages.map((m) => m.role)).toEqual(['user', 'user', 'system'])
+    },
+  )
+
+  scenario(
     "C04 one tool round trip through the user's JWT: tool_call, tool_result after its row, four rows",
     async () => {
       anthropic.script(callTools(toolUse('search_items', { query: 'stol' })), answer('Tri stavke.'))
@@ -157,7 +212,7 @@ describe('POST /chat stream', () => {
       ])
       const result = sse.events.find((e) => e.data.type === 'tool_result')!.data
       expect(result).toMatchObject({ tool: 'search_items', is_error: false, output: { total: 3 } })
-      expect(kinds(sessionId)).toEqual(['user', 'assistant', 'tool_result', 'assistant'])
+      expect(kinds(sessionId)).toEqual(['user', 'context', 'assistant', 'tool_result', 'assistant'])
       const read = db.requestsTo('demo_items', 'GET')[0]!
       expect(read.headers.get('authorization')).toBe('Bearer tok-member')
     },
@@ -176,7 +231,7 @@ describe('POST /chat stream', () => {
       expect(sse.comments.filter((c) => c === 'keepalive').length).toBeGreaterThanOrEqual(5)
       expect(sse.events.map((e) => e.data.type)).toEqual(['session', 'error'])
       expect(sse.events[1]!.data).toMatchObject({ code: 'request_timeout' })
-      expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user'])
+      expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user', 'context'])
       expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
@@ -192,7 +247,7 @@ describe('POST /chat stream', () => {
       const res = await call('/chat', { session_id: null, message: 'x' }, { signal: controller.signal })
       const sse = await readSse(res)
       expect(sse.events.map((e) => e.data.type)).toEqual(['session'])
-      expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user'])
+      expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user', 'context'])
       const lines = logs.filter((l) => l.line.includes('"event":"client disconnect"'))
       expect(lines).toHaveLength(1)
       expect(lines[0]!.line).toContain('req.signal')
@@ -211,8 +266,8 @@ describe('POST /chat stream', () => {
       const sse = await readSse(res)
       expect(sse.events.map((e) => e.data.type)).toEqual(['session', 'tool_call'])
       const sessionId = sse.events[0]!.data.session_id as string
-      expect(kinds(sessionId)).toEqual(['user', 'assistant', 'tool_result'])
-      const block = blocks(rowsOf(sessionId)[2]!.content, 'tool_result')[0]
+      expect(kinds(sessionId)).toEqual(['user', 'context', 'assistant', 'tool_result'])
+      const block = blocks(rowsOf(sessionId)[3]!.content, 'tool_result')[0]
       expect(block).toMatchObject({ is_error: true })
       expect(String(block.content)).toContain('cancelled')
     },
@@ -230,7 +285,7 @@ describe('POST /chat stream', () => {
     const sse = await chat({ session_id: null, message: 'x' })
     expect(sse.types.filter((t) => t !== 'delta')).toEqual(['session', 'error'])
     expect(sse.events.at(-1)!.data).toMatchObject({ code: 'persistence_error' })
-    expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user'])
+    expect(kinds(sse.events[0]!.data.session_id as string)).toEqual(['user', 'context'])
   })
 
   scenario('C09 the title is backfilled from the opening message on a new session only', async () => {
@@ -247,7 +302,7 @@ describe('POST /chat stream', () => {
     anthropic.script(answer('ok'))
     await chat({ session_id: SESSION_MEMBER_CHAT, message: 'nastavak' })
     const sent = anthropic.calls[0]!.body.messages
-    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'user'])
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'user', 'system'])
     expect((sent[3]!.content as Array<{ text: string }>)[0]!.text).toBe('nastavak')
     const newRow = rowsOf(SESSION_MEMBER_CHAT).find((m) => m.turn_kind === 'user' && m.id !== MSG_USER)!
     expect(newRow.parent_id).toBe(MSG_TOOL_RESULT)
@@ -260,7 +315,7 @@ describe('POST /chat stream', () => {
       anthropic.script(answer('ok'))
       await chat({ session_id: SESSION_MEMBER_CHAT, message: 'grana', parent_message_id: MSG_USER })
       const sent = anthropic.calls[0]!.body.messages
-      expect(sent.map((m) => m.role)).toEqual(['user', 'user'])
+      expect(sent.map((m) => m.role)).toEqual(['user', 'user', 'system'])
       const newRow = rowsOf(SESSION_MEMBER_CHAT).find((m) => m.turn_kind === 'user' && m.id !== MSG_USER)!
       expect(newRow.parent_id).toBe(MSG_USER)
       const history = db.requests.find((r) => r.service === 'rpc' && r.table === 'ai_session_history')!
@@ -269,7 +324,7 @@ describe('POST /chat stream', () => {
   )
 
   scenario(
-    'C12 the model request carries the chat settings: Opus 5.5, no thinking, effort from env, fallbacks with the beta, three system blocks',
+    'C12 the model request carries the chat settings: Opus 5.5, no thinking, effort from env, fallbacks with the beta, two system blocks and the date as a system message (API-18)',
     async () => {
       anthropic.script(answer('ok'), answer('ok'))
       await chat({ session_id: null, message: 'x' })
@@ -283,10 +338,10 @@ describe('POST /chat stream', () => {
       expect(call0.body).not.toHaveProperty('thinking')
       expect(call0.headers.get('anthropic-beta')).toContain('server-side-fallback-2026-07-01')
       const system = call0.body.system as Array<{ text: string; cache_control?: unknown }>
-      expect(system).toHaveLength(3)
+      expect(system).toHaveLength(2)
       expect(system[0]!.cache_control).toEqual({ type: 'ephemeral' })
       expect(system[1]!.text).toContain(M.email)
-      expect(system[2]!.text).toMatch(/^Danas je .*2026\.$/)
+      expect(JSON.stringify(call0.body.messages.at(-1))).toMatch(/"role":"system".*Danas je .*2026\./)
       expect(call0.body.tools!.map((t) => t.name)).toEqual([
         'create_note',
         'flag_mail',
@@ -323,7 +378,15 @@ describe('POST /chat stream', () => {
       const sse = await chat({ session_id: SESSION_MEMBER_CHAT, message: 'nastavi' })
       expect(anthropic.rejections).toEqual([])
       const sent = anthropic.calls[0]!.body.messages
-      expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'user'])
+      expect(sent.map((m) => m.role)).toEqual([
+        'user',
+        'assistant',
+        'user',
+        'assistant',
+        'user',
+        'user',
+        'system',
+      ])
       expect(blocks(sent[4]!.content, 'tool_result')[0]).toMatchObject({ is_error: true })
       expect(sse.types).toContain('done')
       expect(rowsOf(SESSION_MEMBER_CHAT).filter((m) => m.turn_kind === 'tool_result')).toHaveLength(1)
@@ -350,7 +413,7 @@ describe('POST /chat stream', () => {
       expect(logs.find((l) => l.line.includes('"event":"timing"'))!.line).toContain(
         '"outcome":"client_disconnect"',
       )
-      expect(kinds(sessionId)).toEqual(['user'])
+      expect(kinds(sessionId)).toEqual(['user', 'context'])
       expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
@@ -407,8 +470,8 @@ describe('POST /chat stream', () => {
       expect(sse.types).toEqual(['session', 'tool_call', 'error'])
       expect(sse.events.at(-1)!.data).toMatchObject({ code: 'request_timeout' })
       const sessionId = sse.events[0]!.data.session_id as string
-      expect(kinds(sessionId)).toEqual(['user', 'assistant', 'tool_result'])
-      const block = blocks(rowsOf(sessionId)[2]!.content, 'tool_result')[0]
+      expect(kinds(sessionId)).toEqual(['user', 'context', 'assistant', 'tool_result'])
+      const block = blocks(rowsOf(sessionId)[3]!.content, 'tool_result')[0]
       expect(block).toMatchObject({ is_error: true })
       expect(logs.find((l) => l.line.includes('"event":"timing"'))!.line).toContain(
         '"outcome":"request_timeout"',
