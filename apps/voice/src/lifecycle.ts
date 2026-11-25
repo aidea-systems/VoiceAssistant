@@ -25,6 +25,52 @@ export function sessionErrorAction(error: {
   return error.type === 'tts_error' ? 'hang_up' : 'speak_and_hang_up'
 }
 
+export type SessionErrorActionKind = ReturnType<typeof sessionErrorAction>
+
+/** What a `session error` log line carries: the provider, whether LiveKit can recover, the
+ * error's class and HTTP status (`401` is a revoked key). Never the error's message, which a
+ * provider may fill with the text it was given. */
+export function sessionErrorFields(error: { type: string; recoverable?: boolean; error?: unknown }): {
+  source: string
+  recoverable: boolean | null
+  reason: string | null
+  status: number | null
+} {
+  const inner = error.error as { constructor?: { name?: string }; statusCode?: unknown } | undefined
+  return {
+    source: error.type,
+    recoverable: typeof error.recoverable === 'boolean' ? error.recoverable : null,
+    reason: inner?.constructor?.name ?? null,
+    status: typeof inner?.statusCode === 'number' ? inner.statusCode : null,
+  }
+}
+
+/**
+ * Where a provider failure goes (VOICE-12c). The session's error handler is attached before the
+ * session starts, so a failure during the phone gate (the greeting, the PIN prompt) is not
+ * silence until the PIN times out, as it was with a revoked text-to-speech key: until the caller
+ * is admitted it goes to the gate's hang-up, after that to the call's (fallback line, credential
+ * revoked, room deleted).
+ */
+export class SessionErrorRoute {
+  private call: ((action: SessionErrorActionKind) => void) | null = null
+
+  constructor(private readonly gate: (action: SessionErrorActionKind) => void) {}
+
+  get phase(): 'gate' | 'call' {
+    return this.call ? 'call' : 'gate'
+  }
+
+  /** From here on, failures are the call's. */
+  admitted(call: (action: SessionErrorActionKind) => void): void {
+    this.call = call
+  }
+
+  route(action: SessionErrorActionKind): void {
+    ;(this.call ?? this.gate)(action)
+  }
+}
+
 /** How long a hang-up waits for the agent to speak its last line before going ahead anyway
  * (text-to-speech may be the thing that failed). */
 export const HANGUP_GRACE_MS = 10_000

@@ -163,7 +163,11 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    playout or the 10 s grace (`sessionErrorAction`); a recoverable one is only logged, LiveKit
    retries it. The
    session's own `close` event (LiveKit's unrecoverable-error limit, or the drain on shutdown)
-   hangs up as well (`VOICE-12`).
+   hangs up as well (`VOICE-12`). The handler is attached before the session starts, so a
+   failure during the phone gate (the greeting, the PIN prompt) hangs up at once instead of
+   leaving the caller in silence until the PIN times out (`SessionErrorRoute`, `VOICE-26`; seen
+   live with a revoked ElevenLabs key). The `session error` line carries the `phase` (`gate`,
+   `call`) and the provider's HTTP `status` (401 is a revoked key).
 
 ## Settings (`env.ts`)
 

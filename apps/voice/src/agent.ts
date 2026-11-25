@@ -30,7 +30,14 @@ import { LOG_TAG, type VoiceDeps } from './config.js'
 import { landmarkConfig, parseVoiceEnv } from './env.js'
 import { GREETING_HR } from './greeting.js'
 import { acceptDispatchedJob, callTokenOf, phoneJobOf } from './job.js'
-import { HangUp, NO_SPEECH, participantLeft, sessionErrorAction } from './lifecycle.js'
+import {
+  HangUp,
+  NO_SPEECH,
+  participantLeft,
+  sessionErrorAction,
+  sessionErrorFields,
+  SessionErrorRoute,
+} from './lifecycle.js'
 import { createMetrics, createTurnMetrics } from './metrics.js'
 import { admitPhoneCaller } from './phone/admit.js'
 import { loadHints } from './providers/hints.js'
@@ -55,7 +62,10 @@ const deps: VoiceDeps = {
     apiKey: env.ANTHROPIC_API_KEY,
     ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}),
   }),
-  registry: createRegistry(createVoiceTokenStore(env, () => new Date()), landmarkConfig(env)),
+  registry: createRegistry(
+    createVoiceTokenStore(env, () => new Date()),
+    landmarkConfig(env),
+  ),
   channel: 'voice',
   settings: {
     ...channelSettings('voice', {
@@ -116,6 +126,29 @@ export default defineAgent<UserData>({
       stt: createStt(env, loadHints()),
       tts: createTts(env),
       turnHandling: turnHandlingOptions(env),
+    })
+    // A Soniox or ElevenLabs failure LiveKit cannot recover from would leave the caller silent.
+    // Listened for from the start (VOICE-12c): during the phone gate (the greeting, the PIN
+    // prompt) a failure hangs up at once instead of waiting out the PIN timeout in silence; once
+    // the caller is admitted, the call's own handling below takes over.
+    const gateHangUp = new HangUp((reason) => {
+      log('info', LOG_TAG, 'call refused', { ...ids, reason })
+      void (phone ? ctx.deleteRoom().catch(() => {}) : Promise.resolve()).then(() => ctx.shutdown(reason))
+    })
+    const errors = new SessionErrorRoute((action) => {
+      if (action === 'speak_and_hang_up')
+        gateHangUp.afterSpeech('session_error', session.say(MESSAGES_HR.internal_error).waitForPlayout())
+      else gateHangUp.now('session_error')
+    })
+    session.on(voice.AgentSessionEventTypes.Error, (ev) => {
+      const action = sessionErrorAction(ev.error)
+      log('error', LOG_TAG, 'session error', {
+        ...ids,
+        phase: errors.phase,
+        ...sessionErrorFields(ev.error as Parameters<typeof sessionErrorFields>[0]),
+        action,
+      })
+      if (action !== 'log') errors.route(action)
     })
 
     // Who is on the line. In-app: the API's row for the token. Phone: the gate (caller ID, PIN),
@@ -268,20 +301,10 @@ export default defineAgent<UserData>({
         }
       }
     })
-    // A Soniox or ElevenLabs failure LiveKit cannot recover from would leave the caller silent:
-    // say the fallback where speech still works and hang up after that line (after the grace
-    // when nothing can be said). The session's own close (after LiveKit's unrecoverable-error
-    // limit, or its drain on shutdown) hangs up too.
-    session.on(voice.AgentSessionEventTypes.Error, (ev) => {
-      const action = sessionErrorAction(ev.error)
-      log('error', LOG_TAG, 'session error', {
-        ...ids,
-        source: ev.error.type,
-        recoverable: 'recoverable' in ev.error ? ev.error.recoverable : null,
-        reason: 'error' in ev.error ? (ev.error.error?.constructor.name ?? null) : null,
-        action,
-      })
-      if (action === 'log') return
+    // From here a provider failure is the call's: the fallback where speech still works, then
+    // the hang-up after that line (after the grace when nothing can be said). The session's own
+    // close (after LiveKit's unrecoverable-error limit, or its drain on shutdown) hangs up too.
+    errors.admitted((action) => {
       const fallback = action === 'speak_and_hang_up' ? session.say(MESSAGES_HR.internal_error) : null
       hangUp.afterSpeech('session_error', fallback?.waitForPlayout() ?? NO_SPEECH)
     })

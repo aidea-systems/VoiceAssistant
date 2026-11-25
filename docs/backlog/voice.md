@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-26 (next free)
+Ids: VOICE-27 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-26 · Medium · A speech failure during the phone gate left the caller in silence until the PIN timed out
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: a revoked ElevenLabs key, two silent calls ending in `pin_timeout`): the session's error handler is attached before the session starts and routes a failure in the gate to an immediate hang-up; the `session error` line names the phase and the provider's HTTP status.
 
 ### VOICE-25 · Medium · The first question of a call was slow (5–10 s): it ran before the warm-up had written the cache
 
