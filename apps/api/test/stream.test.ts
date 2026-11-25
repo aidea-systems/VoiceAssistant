@@ -352,6 +352,7 @@ describe('POST /chat stream', () => {
         'reply_mail',
         'search_items',
         'search_mail',
+        'send_mail',
       ])
       const tuned = buildApp({ env: { ...env, AI_CHAT_EFFORT: 'high' } })
       await chat({ session_id: null, message: 'x' }, { app: tuned })

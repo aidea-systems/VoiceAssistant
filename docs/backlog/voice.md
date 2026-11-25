@@ -1,10 +1,23 @@
 # Backlog — voice
 
-Ids: VOICE-22 (next free)
+Ids: VOICE-23 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
 ## Open
+
+### VOICE-22 · Low · Replies made on a call are not counted in the daily mail cap
+
+- **Check:** Code reading (found while building `send_mail`, 2026-11-25)
+- **Where:** `apps/voice/src/session.ts` keeps a call's confirmations in a
+  `MemoryConfirmationStore`; `packages/tools-mail/src/send-cap.ts` counts executed `reply_mail` /
+  `send_mail` rows in `tool_confirmations`, which only the chat writes
+- **What happens:** the cap of 20 mail writes a day (decision 0019) sees chat replies and new
+  mail, but not replies confirmed on a call, so a user who mostly replies by phone can send more
+  than 20 a day. Every reply still needs the caller's "da"
+- **Fix direction:** have the worker persist its settled writes to `tool_confirmations` through
+  the service role (the store contract is shared, `confirmation-store-contract.ts`), or count the
+  call's sends in a small table the cap reads too
 
 ### VOICE-21 · Low · A UUID the model reads aloud is not scrubbed by `speakable()`
 

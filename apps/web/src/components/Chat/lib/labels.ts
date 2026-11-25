@@ -13,6 +13,8 @@ export const TOOL_LABELS_HR: Record<string, string> = {
   list_calendar: 'Pregled kalendara',
   reply_mail: 'Slanje odgovora',
   flag_mail: 'Označavanje poruke',
+  // New mail from chat (decision 0019).
+  send_mail: 'Slanje poruke',
 }
 
 export const ERROR_LABELS_HR: Record<string, string> = {

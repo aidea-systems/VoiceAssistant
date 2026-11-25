@@ -189,7 +189,7 @@ export interface FakeMessage {
   hasAttachments?: boolean
   /** The new part of the message (Graph's uniqueBody), plain text. */
   body: string
-  folder?: 'inbox' | 'archive'
+  folder?: 'inbox' | 'archive' | 'sentitems'
   /** Set by PATCH { flag }. */
   flag?: 'notFlagged' | 'flagged' | 'complete'
 }
@@ -293,7 +293,11 @@ export function installMailbox(
     },
   }))
 
+  // Every folder, as Graph's /me/messages. The pack sends no `$filter` here, so any is a 400 and a
+  // filter it starts sending is never silently ignored.
   graph.route('GET', '/me/messages', (c) => {
+    if (c.query.get('$filter') !== null)
+      return { status: 400, body: { error: { code: 'BadRequest', message: 'Unsupported $filter.' } } }
     const raw = c.query.get('$search')
     const phrase = raw === null ? null : searchPhrase(raw)
     if (raw !== null && phrase === null)
@@ -334,6 +338,26 @@ export function installMailbox(
     messages.find(
       (x) => x.id === decodeURIComponent(c.path.slice('/me/messages/'.length, c.path.length - suffix.length)),
     )
+
+  // Sent Items with a KQL `to:` search, matched loosely over the To and Cc addresses as the
+  // index does (the pack checks the exact address in what comes back).
+  graph.route('GET', '/me/mailFolders/sentitems/messages', (c) => {
+    const raw = c.query.get('$search')
+    const phrase = raw === null ? null : searchPhrase(raw)
+    if (raw !== null && phrase === null)
+      return { status: 400, body: { error: { code: 'BadRequest', message: 'Syntax error in $search.' } } }
+    const needle = (phrase ?? '').replace(/^to:/i, '').toLowerCase()
+    const value = byNewest(messages.filter((m) => m.folder === 'sentitems'))
+      .filter((m) =>
+        [...(m.to ?? []), ...(m.cc ?? [])].some((r) => r.address.toLowerCase().includes(needle)),
+      )
+      .slice(0, top(c))
+      .map((m) => project(messageJson(m, textBody(c)), c.query.get('$select')))
+    return { body: { value } }
+  })
+
+  // New mail is accepted with 202 and no body, like a reply.
+  graph.route('POST', '/me/sendMail', { status: 202 })
 
   // A reply is accepted with 202 and no body; the test reads what was sent from `graph.calls`.
   graph.route('POST', /^\/me\/messages\/[^/]+\/reply$/, (c) =>

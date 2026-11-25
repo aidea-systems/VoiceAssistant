@@ -5,7 +5,8 @@ decision 0016). **13a, built:** the connection: the sealed token table, the toke
 refresh, the tenant-pinned OAuth connect flow in the API, a Graph client with its fake, the
 Settings entry in the PWA. **13b, built:** the four read tools on chat, voice and phone, and the
 mail rules in the prompt. **13c, built:** the two confirmed writes, `reply_mail` and `flag_mail`, on chat, voice and phone
-(`docs/plan/13-email-pack.md`).
+(`docs/plan/13-email-pack.md`). **New mail, built 2026-11-25:** `send_mail` on chat only, to
+allowlisted recipients, with a daily cap shared with replies (decision 0019).
 
 ## Packages
 
@@ -96,8 +97,38 @@ partner.hr`), since a display name is the sender's to choose. Quotation marks in
 - **Errors** as the reads, plus `no_sender` (a reply to a message without a From address),
   `reply_too_long`, `write_outcome_unknown`; a preview's failure reaches the model as an is_error
   result naming the code. A 404 on the write is `message_not_found`.
-- **No daily cap** (`API-16`). Whether Graph replaces or adds recipients with `toRecipients` is
-  the first live check's (`REL-13`).
+- **The daily cap** (`API-16`, decision 0019): 20 confirmed mail writes per user and Zagreb
+  day, `reply_mail` and `send_mail` together, counted from the user's `tool_confirmations` rows
+  confirmed that day, whatever their outcome (`send-cap.ts`, read as the user with an explicit
+  `user_id` filter; two tabs confirming at once may exceed it by one); past it the preview and
+  the handler answer `send_limit_reached`. Replies made on a call are not counted (`VOICE-22`).
+  Graph replaced the recipients with `toRecipients` on the live check (`REL-13`).
+
+## New mail (`send_mail`, chat only, decision 0019)
+
+`send_mail(to, cc, subject, text)`: 1–10 addresses in To, up to 10 in all with Cc, each once;
+addresses are trimmed, lower-cased, ≤ 254 characters and one plain ASCII address
+(`ADDRESS_PATTERN` in `recipients.ts`: letters, digits and `. _ + -` before the `@`); a one-line
+subject ≤ 200 and a text ≤ 2000 characters without invisible characters. Preview (nominative,
+needs native review): `Poslat ću novu poruku. Prima: {to}; u kopiji: {cc}. Predmet: „{subject}“.
+Tekst glasi: „{text}“`, every address in full and before anything the model wrote, so a subject
+or a text cannot imitate a recipient line. On the confirmed request: `POST /me/sendMail` with `toRecipients`,
+`ccRecipients`, the subject, a plain-text body and `saveToSentItems: true`; 202.
+
+- **Who may receive it** (`recipients.ts`): an address at the user's own domain (the domain of
+  `ctx.email`, which equals the mailbox's UPN, `apps/api/src/integrations/identity.ts`; none when
+  `ctx.email` is null), or one the user has written to
+  (`GET /me/mailFolders/sentitems/messages?$search="to:…"`, the search index, then an exact match
+  on the returned To and Cc). Having received mail from an address is not enough: anyone can
+  send one, the author of an injected request included. Anyone else is `recipient_not_allowed`
+  with the refused addresses, before a confirmation exists; the handler checks again before
+  sending. A mail sent minutes ago may not be in the index yet.
+- **Chat only.** `apps/voice/src/tools.ts` does not list it, and the preview and the handler
+  refuse a spoken channel (`chat_only`) on their own.
+- **Errors** as `reply_mail`: `write_outcome_unknown` (never retried), `outlook_unavailable`
+  (also when it waited too long for a mailbox slot), `send_rejected` (Graph's 400 on the send
+  itself, not on a lookup), plus
+  `recipient_not_allowed`, `send_limit_reached`, `chat_only`.
 
 ## The rules in the prompt
 
@@ -226,23 +257,24 @@ or a body; the field names are on the denylist of `packages/core/src/log-fields.
 
 ## Tests
 
-| Ids              | Where                                                                               | What                                                                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| J01–J06          | `packages/integrations/src/crypto.test.ts`                                          | sealing, binding, tampering, rotation, key parsing                                                                                                                            |
-| O01–O11          | `packages/integrations/src/microsoft/oauth.test.ts`                                 | the authorize URL, tenant pinning, PKCE, exchange, refresh, error mapping, the refresh-only client                                                                            |
-| U01–U18          | `packages/integrations/src/microsoft/tokens.test.ts`                                | the token store against the fake PostgREST and Microsoft, races, aborts, timeouts                                                                                             |
-| Q01–Q07          | `packages/tools-mail/src/graph.test.ts`                                             | the Graph client                                                                                                                                                              |
-| Q08–Q15          | `packages/tools-mail/src/refs.test.ts`, `clean.test.ts`                             | refs (never reused), body cleaning, invisible characters, clipping                                                                                                            |
-| Z19–Z27          | `packages/tools-mail/src/writes.test.ts`                                            | the writes through the loop: preview, confirmed send pinned to From, a changed text, the voice summary, refusals, an unknown outcome, the flag                                |
-| W42, W43         | `apps/voice/test/confirm.test.ts`                                                   | a reply on a call: heard verbatim, sent on "da", nothing on "ne"                                                                                                              |
-| B30              | `apps/api/test/integrations.test.ts`                                                | a reply over `/chat`: the confirm event, then one send                                                                                                                        |
-| Z01–Z18          | `packages/tools-mail/src/pack.test.ts`                                              | the four tools through the loop on chat, voice and phone: the Graph requests, what the model got, the prompt, every error envelope, the 401 refresh, the field caps, the logs |
-| B01–B16, B20–B29 | `apps/api/test/integrations.test.ts`                                                | the connect routes, the identity check, the env group; a chat turn reading the mailbox (B28, B29)                                                                             |
-| B17–B19          | `apps/api/test/state.test.ts`                                                       | the OAuth state store                                                                                                                                                         |
-| X01c, X02c       | `apps/*/test/env-matrix.test.ts`                                                    | each `env.example` starts its app                                                                                                                                             |
-| W40, W41         | `apps/voice/test/env.test.ts`, `tools.test.ts`                                      | the worker's env group; its token provider                                                                                                                                    |
-| Y01–Y07, L06     | `apps/web/src/components/Settings/SettingsPage.test.tsx`, `Chat/lib/labels.test.ts` | Settings → Outlook; the chip labels                                                                                                                                           |
-| pgTAP            | `supabase/tests/database/user_integrations.test.sql`                                | the grants, the policy, the constraints                                                                                                                                       |
+| Ids              | Where                                                                               | What                                                                                                                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J01–J06          | `packages/integrations/src/crypto.test.ts`                                          | sealing, binding, tampering, rotation, key parsing                                                                                                                                                                                                                                      |
+| O01–O11          | `packages/integrations/src/microsoft/oauth.test.ts`                                 | the authorize URL, tenant pinning, PKCE, exchange, refresh, error mapping, the refresh-only client                                                                                                                                                                                      |
+| U01–U18          | `packages/integrations/src/microsoft/tokens.test.ts`                                | the token store against the fake PostgREST and Microsoft, races, aborts, timeouts                                                                                                                                                                                                       |
+| Q01–Q07          | `packages/tools-mail/src/graph.test.ts`                                             | the Graph client                                                                                                                                                                                                                                                                        |
+| Q08–Q15          | `packages/tools-mail/src/refs.test.ts`, `clean.test.ts`                             | refs (never reused), body cleaning, invisible characters, clipping                                                                                                                                                                                                                      |
+| Z19–Z27          | `packages/tools-mail/src/writes.test.ts`                                            | the writes through the loop: preview, confirmed send pinned to From, a changed text, the voice summary, refusals, an unknown outcome, the flag                                                                                                                                          |
+| Z29–Z37          | `packages/tools-mail/src/send-mail.test.ts`                                         | new mail: the allowlist (own domain, the user wrote to), a stranger, a sender who only wrote and look-alike domains refused, the confirmed send, the cap with replies, an unknown outcome, input refusals, never on a call, the re-check before sending, no own domain without an email |
+| W42, W43         | `apps/voice/test/confirm.test.ts`                                                   | a reply on a call: heard verbatim, sent on "da", nothing on "ne"                                                                                                                                                                                                                        |
+| B30              | `apps/api/test/integrations.test.ts`                                                | a reply over `/chat`: the confirm event, then one send                                                                                                                                                                                                                                  |
+| Z01–Z18          | `packages/tools-mail/src/pack.test.ts`                                              | the four tools through the loop on chat, voice and phone: the Graph requests, what the model got, the prompt, every error envelope, the 401 refresh, the field caps, the logs                                                                                                           |
+| B01–B16, B20–B29 | `apps/api/test/integrations.test.ts`                                                | the connect routes, the identity check, the env group; a chat turn reading the mailbox (B28, B29)                                                                                                                                                                                       |
+| B17–B19          | `apps/api/test/state.test.ts`                                                       | the OAuth state store                                                                                                                                                                                                                                                                   |
+| X01c, X02c       | `apps/*/test/env-matrix.test.ts`                                                    | each `env.example` starts its app                                                                                                                                                                                                                                                       |
+| W40, W41         | `apps/voice/test/env.test.ts`, `tools.test.ts`                                      | the worker's env group; its token provider                                                                                                                                                                                                                                              |
+| Y01–Y07, L06     | `apps/web/src/components/Settings/SettingsPage.test.tsx`, `Chat/lib/labels.test.ts` | Settings → Outlook; the chip labels                                                                                                                                                                                                                                                     |
+| pgTAP            | `supabase/tests/database/user_integrations.test.sql`                                | the grants, the policy, the constraints                                                                                                                                                                                                                                                 |
 
 The fakes answer the services over `fetch` (`FakeMicrosoft`, `FakeGraph`); the API harness also
 fails any request to a Microsoft host that reaches the global `fetch`, so no test can call

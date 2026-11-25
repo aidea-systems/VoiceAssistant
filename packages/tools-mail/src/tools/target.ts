@@ -25,8 +25,8 @@ export type TargetFailure = AccessFailure | { error: 'ref_expired' | 'message_no
 // Quotation marks in a subject or a name could imitate the summary's own structure
 // (`„…“. Primatelj je …`), so they become plain apostrophes there.
 const QUOTES = /[„“”"«»‚‘’]/g
-const unquote = (text: string): string => text.replace(QUOTES, "'")
-const domainOf = (address: string): string => address.slice(address.lastIndexOf('@') + 1).toLowerCase()
+export const unquote = (text: string): string => text.replace(QUOTES, "'")
+export const domainOf = (address: string): string => address.slice(address.lastIndexOf('@') + 1).toLowerCase()
 
 export async function loadTarget(
   deps: MailDeps,

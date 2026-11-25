@@ -6,17 +6,6 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
 
 ## Open
 
-### API-16 · Low · No daily cap on replies the assistant sends
-
-- **Check:** By design (Part 13c, the user's choice on 2026-11-04)
-- **Where:** `packages/tools-mail/src/tools/reply-mail.ts`; the roadmap sketch
-  (`docs/plan/10-integration-roadmap.md` step 3) mentioned a daily send cap per user
-- **What happens:** every reply needs the user's explicit confirmation, so nothing is sent on
-  the model's say-so, but a user (or someone with their phone and PIN) can send any number
-- **Fix direction:** count today's executed `reply_mail` confirmations per user (the chat table
-  and the call's store together, so a count in the database) and answer an error envelope past
-  a limit (20?), when more users join
-
 ### API-15 · Low · Mail refs live in one process's memory
 
 - **Check:** By design (Part 13b, like `API-13`)
@@ -105,6 +94,10 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-16 · Low · No daily cap on replies the assistant sends
+
+Fixed on `feat/send-mail` (decision 0019): 20 confirmed mail writes per user and Zagreb day, `reply_mail` and `send_mail` together, counted from `tool_confirmations` (`packages/tools-mail/src/send-cap.ts`); replies on a call are not counted yet (`VOICE-22`).
 
 ### API-18 · Medium · The date line in the system prompt breaks every chat that continues past midnight
 

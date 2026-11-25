@@ -119,8 +119,12 @@ on a call with the domain when it is not the user's own, since a display name is
 choose) and on a call is read out verbatim before the caller answers; quotation marks in a
 subject or name are made plain so they cannot imitate the summary; the reply is a plain-text body
 with no invisible character; once confirmed, a write runs to its real outcome and a send whose
-outcome is unknown is never retried (`write_outcome_unknown`). There is no daily send cap yet
-(`API-16`).
+outcome is unknown is never retried (`write_outcome_unknown`). New mail (`send_mail`, decision 0019) is chat only and goes only to the user's own domain or to people the user has written to
+(Sent Items; never merely someone who wrote to the user, since an injected request comes from its
+own sender), checked before the confirmation and again before sending; the preview lists every
+recipient before anything the model wrote, and its description forbids sending because a
+message asks for it or passing other mail on. At most 20 confirmed mail writes per user and day, replies and new mail
+together (`API-16`).
 
 **Outlook (Part 13a, decision 0016).** The assistant reaches a mailbox with delegated
 permissions only, as the user who connected it, through a separate Entra app restricted to
