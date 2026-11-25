@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-27 (next free)
+Ids: VOICE-28 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-27 · Low · A model request the SDK retried left no trace, so a slow turn could not be explained
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: a first question waited 10.4 s for the model): the worker's Anthropic client uses `observedFetch`, which logs `model request failed` with the status, Anthropic's request id, Retry-After and the time for every refused or dropped attempt. The API's client does not have it yet.
 
 ### VOICE-26 · Medium · A speech failure during the phone gate left the caller in silence until the PIN timed out
 

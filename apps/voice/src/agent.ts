@@ -42,6 +42,7 @@ import { createMetrics, createTurnMetrics } from './metrics.js'
 import { admitPhoneCaller } from './phone/admit.js'
 import { loadHints } from './providers/hints.js'
 import { createStt } from './providers/stt.js'
+import { observedFetch } from './providers/anthropic.js'
 import { createTts } from './providers/tts.js'
 import { loadVad } from './providers/vad.js'
 import { installStdoutRedaction } from './redact.js'
@@ -61,6 +62,8 @@ const deps: VoiceDeps = {
   anthropic: new Anthropic({
     apiKey: env.ANTHROPIC_API_KEY,
     ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}),
+    // Every refused or failed model request is a log line; the SDK retries them silently (VOICE-27).
+    fetch: observedFetch(),
   }),
   registry: createRegistry(
     createVoiceTokenStore(env, () => new Date()),
