@@ -6,6 +6,7 @@ import { isAccessFailure, isSpoken, type MailDeps, withGraph } from '../access.j
 import { stripInvisible } from '../clean.js'
 import { GraphError, GraphNotSentError } from '../graph.js'
 import { REF_PATTERN } from '../refs.js'
+import { checkSendCap } from '../send-cap.js'
 import { isTargetFailure, loadTarget, previewFailure } from './target.js'
 
 export const REPLY_MAX = 2000
@@ -41,12 +42,17 @@ export function replyMail(deps: MailDeps) {
     async preview(input, ctx, extras, signal) {
       const spoken = isSpoken(extras.channel)
       if (spoken && input.text.length > SPOKEN_REPLY_MAX) throw previewFailure({ error: 'reply_too_long' })
+      // The day's cap, shared with send_mail (API-16): refused before the user is asked.
+      const cap = await checkSendCap(ctx, deps.clock(), signal)
+      if (cap) throw new Error(cap.error)
       const target = await loadTarget(deps, ctx, input.ref, spoken, signal, { requireSender: true })
       if (isTargetFailure(target)) throw previewFailure(target)
       return `Odgovorit ću na poruku „${target.subject}“. Primatelj je ${target.sender}, a tekst glasi: „${input.text}“`
     },
     async handler(input, ctx, extras, signal) {
       const send = AbortSignal.any([signal, AbortSignal.timeout(RUN_TIMEOUT_MS)])
+      const cap = await checkSendCap(ctx, deps.clock(), send, extras.confirmation)
+      if (cap) return cap
       const target = await loadTarget(deps, ctx, input.ref, isSpoken(extras.channel), send, {
         requireSender: true,
       })

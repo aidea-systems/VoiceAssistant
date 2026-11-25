@@ -24,6 +24,7 @@ describe('api tools', () => {
       'reply_mail',
       'search_items',
       'search_mail',
+      'send_mail',
     ])
     // Part 13b: the mail pack's rules reach the chat prompt whether or not Outlook is configured.
     expect(registry.domainRules()).toHaveLength(1)

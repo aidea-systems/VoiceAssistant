@@ -43,6 +43,9 @@ describe('voice tools', () => {
     ]
     expect(registry.select({ role: 'member' }, 'voice').map((t) => t.name)).toEqual(advertised)
     expect(registry.select({ role: 'member' }, 'phone').map((t) => t.name)).toEqual(advertised)
+    // Decision 0019: new mail is chat only; the pack registers send_mail, no call may reach it.
+    expect(registry.select({ role: 'admin' }, 'voice').map((t) => t.name)).not.toContain('send_mail')
+    expect(registry.select({ role: 'admin' }, 'phone').map((t) => t.name)).not.toContain('send_mail')
     expect(registry.domainRules()).toHaveLength(1)
     // Every spoken tool is read-only or waits for the caller's confirmation (decision 0015).
     expect(

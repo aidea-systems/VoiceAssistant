@@ -19,6 +19,7 @@ describe('labels', () => {
       'list_calendar',
       'reply_mail',
       'flag_mail',
+      'send_mail',
     ]) {
       expect(TOOL_LABELS_HR[tool]).toBeTruthy()
       expect(toolLabel(tool)).not.toBe(tool)

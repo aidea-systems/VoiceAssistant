@@ -160,7 +160,8 @@ Outputs are small; dates ISO in Europe/Zagreb (`Prefer: outlook.timezone="Centra
   confirmation (Part 12), so injected text can at worst produce a preview the user declines.
 - **Replies only to the sender.** `reply_mail` takes a ref and text, no recipients: it can only
   answer the person who wrote. No reply-all, no forward, no new messages in 13 (a `send_mail`
-  for chat with a recipient allowlist is a backlog item, not this part). No delete anywhere.
+  for chat with a recipient allowlist came later: decision 0019, `docs/MAIL.md` → New mail). No
+  delete anywhere.
 - **Preview sentences** (Croatian, marked for review): `Odgovorit ću Marku Horvatu na „Sastanak u
   petak“: „Stižem u deset.“` and `Označit ću poruku „…“ zastavicom.` On voice the sink speaks the
   summary verbatim before the model's question (`VOICE-19`, 13c), so the caller confirms what will

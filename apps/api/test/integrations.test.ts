@@ -4,7 +4,7 @@
 // to Microsoft and the log lines.
 import { expect, it } from 'vitest'
 
-import { answer, callTools, toolUse } from '@va/core/test'
+import { answer, callTools, SESSION_MEMBER_CHAT, toolUse } from '@va/core/test'
 import { open, parseIntegrationsKey, tokenAad } from '@va/integrations'
 import { installMailbox } from '@va/tools-mail/test'
 
@@ -500,6 +500,56 @@ scenario(
     expect(db.rows('tool_confirmations')).toMatchObject([
       { id: confirm.confirmation_id, tool: 'reply_mail', user_id: M.id, outcome: 'executed' },
     ])
+  },
+)
+
+scenario(
+  'B31 chat: new mail to a colleague is previewed, sent once on confirmation, and counts toward the daily cap with replies (decision 0019, API-16)',
+  async () => {
+    const { url, state } = await start()
+    await callback({ code: ms.authorize(url, { upn: M.email }), state })
+    installMailbox(graphFake, { messages: [] })
+    // 19 confirmed mail writes earlier today: this send is the 20th, the next one is refused.
+    const today = new Date().toISOString()
+    db.seed(
+      'tool_confirmations',
+      Array.from({ length: 19 }, (_, i) => ({
+        id: `00000000-0000-4000-8000-${String(800 + i).padStart(12, '0')}`,
+        session_id: SESSION_MEMBER_CHAT,
+        user_id: M.id,
+        tool: 'reply_mail',
+        input_hash: `h${i}`,
+        summary: 's',
+        outcome: 'executed',
+        expires_at: today,
+        confirmed_at: today,
+        settled_at: today,
+      })),
+    )
+    const mail = { to: ['kolega@va.test'], subject: 'Petak', text: 'Vidimo se u petak.' }
+    anthropic.script(callTools(toolUse('send_mail', mail)), answer('Da pošaljem?'))
+    const first = await chat({ session_id: null, message: 'Pošalji kolegi da se vidimo u petak.' })
+    const confirm = first.events.find((e) => e.data.type === 'confirm')!.data as Record<string, string>
+    expect(confirm.summary).toBe(
+      'Poslat ću novu poruku. Prima: kolega@va.test. Predmet: „Petak“. Tekst glasi: „Vidimo se u petak.“',
+    )
+    const sessionId = (first.events[0]!.data as unknown as { session_id: string }).session_id
+
+    anthropic.script(callTools(toolUse('send_mail', mail)), answer('Poslano.'))
+    await chat({ session_id: sessionId, message: 'Da.', confirm: confirm.confirmation_id })
+    const sent = graphFake.calls.filter((c) => c.method === 'POST' && c.path === '/me/sendMail')
+    expect(sent).toHaveLength(1)
+    expect(db.rows('tool_confirmations').find((r) => r.id === confirm.confirmation_id)).toMatchObject({
+      tool: 'send_mail',
+      user_id: M.id,
+      outcome: 'executed',
+    })
+
+    anthropic.script(callTools(toolUse('send_mail', { ...mail, subject: 'Još jedna' })), answer('Danas ne.'))
+    const capped = await chat({ session_id: sessionId, message: 'Pošalji još jednu.' })
+    expect(capped.events.some((e) => e.data.type === 'confirm')).toBe(false)
+    expect(JSON.stringify(capped.events)).toContain('send_limit_reached')
+    expect(graphFake.calls.filter((c) => c.method === 'POST' && c.path === '/me/sendMail')).toHaveLength(1)
   },
 )
 
