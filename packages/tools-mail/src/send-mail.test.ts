@@ -49,6 +49,17 @@ const MESSAGES: FakeMessage[] = [
     body: 'Šaljem narudžbu.',
     folder: 'sentitems',
   },
+  // Sent a minute ago: in Sent Items, not yet in the search index.
+  {
+    id: 'AAMkAD-sent-nova',
+    subject: 'Upoznavanje',
+    from: ME,
+    to: [{ name: 'Nova Partnerica', address: 'nova@partner.hr' }],
+    received: '2026-11-25T09:30:00Z',
+    body: 'Drago mi je.',
+    folder: 'sentitems',
+    indexed: false,
+  },
 ]
 const COLLEAGUE = 'kolega@va.test'
 const MAIL = {
@@ -106,13 +117,14 @@ describe('send_mail', () => {
       expect(sends()).toHaveLength(0)
       expect(run.sink.toolResults[0]!.output).toMatchObject({ pending_confirmation: true, summary: SUMMARY })
       expect(run.sink.confirms[0]).toMatchObject({ tool: 'send_mail', summary: SUMMARY })
-      // Colleagues need no lookup; Ana is found in Sent Items. Nothing filters on who wrote to the user.
-      const lookups = graph.calls
-        .filter((c) => c.method === 'GET')
-        .map((c) => `${c.path}?${c.query.toString()}`)
+      // Colleagues need no lookup; Ana is among the newest Sent Items, read as one plain listing, so
+      // no search is needed (API-21). Nothing filters on who wrote to the user.
+      const lookups = graph.calls.filter((c) => c.method === 'GET')
       expect(lookups).toHaveLength(1)
-      expect(lookups[0]).toContain('/me/mailFolders/sentitems/messages')
-      expect(lookups[0]).toContain('ana%40dobavljac.hr')
+      expect(lookups[0]!.path).toBe('/me/mailFolders/sentitems/messages')
+      expect(lookups[0]!.query.get('$search')).toBeNull()
+      expect(lookups[0]!.query.get('$orderby')).toBe('sentDateTime desc')
+      expect(lookups[0]!.query.get('$top')).toBe('50')
       expect(modelSaw(run.sink.confirms[0]!.id)).toBe(false)
     },
   )
@@ -302,6 +314,21 @@ describe('send_mail', () => {
         'recipient_not_allowed: kolega@va.test',
       )
       expect(sends()).toHaveLength(0)
+    },
+  )
+
+  scenario(
+    'API-21 someone the user wrote to a minute ago (not in the search index yet) is allowed: the newest Sent Items are read directly',
+    async () => {
+      const w = world()
+      anthropic.script(
+        callTools(toolUse('send_mail', { ...MAIL, to: ['nova@partner.hr'], cc: [] })),
+        answer('Da pošaljem?'),
+      )
+      const ctx = await authAs('member')
+      const run = await runChat(ctx, 'Pošalji Novi.', w.opts)
+      expect(run.sink.toolResults[0]!.output).toMatchObject({ pending_confirmation: true })
+      expect(run.sink.confirms[0]!.summary).toContain('Prima: nova@partner.hr.')
     },
   )
 })

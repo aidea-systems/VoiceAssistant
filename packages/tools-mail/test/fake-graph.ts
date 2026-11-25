@@ -190,6 +190,9 @@ export interface FakeMessage {
   /** The new part of the message (Graph's uniqueBody), plain text. */
   body: string
   folder?: 'inbox' | 'archive' | 'sentitems'
+  /** False: not in the search index yet (a mail sent a minute ago); `$search` skips it, a plain
+   * folder listing does not. */
+  indexed?: boolean
   /** Set by PATCH { flag }. */
   flag?: 'notFlagged' | 'flagged' | 'complete'
 }
@@ -309,6 +312,7 @@ export function installMailbox(
       }
     const needle = (phrase ?? '').toLowerCase()
     const value = byNewest(messages)
+      .filter((m) => raw === null || m.indexed !== false)
       .filter((m) => `${m.subject} ${m.body} ${m.from.name} ${m.from.address}`.toLowerCase().includes(needle))
       .slice(0, top(c))
       .map((m) => project(messageJson(m, textBody(c)), c.query.get('$select')))
@@ -348,9 +352,8 @@ export function installMailbox(
       return { status: 400, body: { error: { code: 'BadRequest', message: 'Syntax error in $search.' } } }
     const needle = (phrase ?? '').replace(/^to:/i, '').toLowerCase()
     const value = byNewest(messages.filter((m) => m.folder === 'sentitems'))
-      .filter((m) =>
-        [...(m.to ?? []), ...(m.cc ?? [])].some((r) => r.address.toLowerCase().includes(needle)),
-      )
+      .filter((m) => raw === null || m.indexed !== false)
+      .filter((m) => [...(m.to ?? []), ...(m.cc ?? [])].some((r) => r.address.toLowerCase().includes(needle)))
       .slice(0, top(c))
       .map((m) => project(messageJson(m, textBody(c)), c.query.get('$select')))
     return { body: { value } }

@@ -117,12 +117,13 @@ or a text cannot imitate a recipient line. On the confirmed request: `POST /me/s
 
 - **Who may receive it** (`recipients.ts`): an address at the user's own domain (the domain of
   `ctx.email`, which equals the mailbox's UPN, `apps/api/src/integrations/identity.ts`; none when
-  `ctx.email` is null), or one the user has written to
-  (`GET /me/mailFolders/sentitems/messages?$search="to:…"`, the search index, then an exact match
-  on the returned To and Cc). Having received mail from an address is not enough: anyone can
-  send one, the author of an injected request included. Anyone else is `recipient_not_allowed`
-  with the refused addresses, before a confirmation exists; the handler checks again before
-  sending. A mail sent minutes ago may not be in the index yet.
+  `ctx.email` is null), or one the user has written to: first the To and Cc of the newest 50
+  Sent Items, read as a plain listing (`$orderby=sentDateTime desc`, no search, so a mail sent a
+  minute ago counts, `API-21`), then, for an address not among them, the search index
+  (`$search="to:…"`, an exact match on the returned To and Cc). Having received mail from an
+  address is not enough: anyone can send one, the author of an injected request included. Anyone
+  else is `recipient_not_allowed` with the refused addresses, before a confirmation exists; the
+  handler checks again before sending.
 - **Chat only.** `apps/voice/src/tools.ts` does not list it, and the preview and the handler
   refuse a spoken channel (`chat_only`) on their own.
 - **Errors** as `reply_mail`: `write_outcome_unknown` (never retried), `outlook_unavailable`

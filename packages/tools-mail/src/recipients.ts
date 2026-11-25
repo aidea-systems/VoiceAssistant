@@ -22,6 +22,9 @@ interface Recipients {
   }>
 }
 
+/** How many of the newest Sent Items are read directly, before the search index is asked. */
+export const RECENT_SENT = 50
+
 /** The addresses (already lower-cased) that are not allowed; empty when all are. */
 export async function refusedRecipients(
   graph: GraphClient,
@@ -30,27 +33,42 @@ export async function refusedRecipients(
   signal: AbortSignal,
 ): Promise<string[]> {
   const own = ctx.email ? domainOf(ctx.email) : null
+  const outside = addresses.filter((a) => own === null || domainOf(a) !== own)
+  if (outside.length === 0) return []
+  // The newest Sent Items first, read as a plain listing: a mail sent a minute ago is there
+  // before the search index has it (API-21). Older ones through the index, one search each.
+  const recent = await recentRecipients(graph, signal)
   const checks = await Promise.all(
-    addresses.map(async (address) => {
-      if (own !== null && domainOf(address) === own) return null
-      return (await userWroteTo(graph, address, signal)) ? null : address
-    }),
+    outside.map(async (address) =>
+      recent.has(address) || (await searchedSentTo(graph, address, signal)) ? null : address,
+    ),
   )
   return checks.filter((a): a is string => a !== null)
 }
 
-/** A message in Sent Items to or copying the address. The search is the mailbox index (a mail
- * sent minutes ago may not be in it yet) and matches loosely, so the address is checked exactly
- * in what comes back. */
-async function userWroteTo(graph: GraphClient, address: string, signal: AbortSignal): Promise<boolean> {
+const addressesOf = (m: Recipients['value'][number]): string[] =>
+  [...(m.toRecipients ?? []), ...(m.ccRecipients ?? [])]
+    .map((r) => r.emailAddress?.address?.toLowerCase())
+    .filter((a): a is string => !!a)
+
+/** Every To and Cc address of the newest `RECENT_SENT` Sent Items, lower-cased. */
+async function recentRecipients(graph: GraphClient, signal: AbortSignal): Promise<Set<string>> {
+  const found = await graph.get<Recipients>('/me/mailFolders/sentitems/messages', {
+    select: ['toRecipients', 'ccRecipients'],
+    query: { $orderby: 'sentDateTime desc', $top: RECENT_SENT },
+    signal,
+  })
+  return new Set(found.value.flatMap(addressesOf))
+}
+
+/** A message in Sent Items to or copying the address, through the search index (a mail sent
+ * minutes ago may not be in it yet; the listing above covers those). The search matches loosely,
+ * so the address is checked exactly in what comes back. */
+async function searchedSentTo(graph: GraphClient, address: string, signal: AbortSignal): Promise<boolean> {
   const found = await graph.get<Recipients>('/me/mailFolders/sentitems/messages', {
     select: ['toRecipients', 'ccRecipients'],
     query: { $search: `"to:${address}"`, $top: 5 },
     signal,
   })
-  return found.value.some((m) =>
-    [...(m.toRecipients ?? []), ...(m.ccRecipients ?? [])].some(
-      (r) => r.emailAddress?.address?.toLowerCase() === address,
-    ),
-  )
+  return found.value.some((m) => addressesOf(m).includes(address))
 }
