@@ -331,4 +331,32 @@ describe('send_mail', () => {
       expect(run.sink.confirms[0]!.summary).toContain('Prima: nova@partner.hr.')
     },
   )
+
+  scenario(
+    'API-22 a mail search marks the messages the user sent, with their recipients, so they are not read as received',
+    async () => {
+      anthropic.script(
+        callTools(toolUse('search_mail', { query: 'Narudžba' })),
+        answer('Poslali ste je Ani.'),
+      )
+      const ctx = await authAs('member')
+      const run = await runChat(ctx, 'Što sam poslao Ani?', world().opts)
+      const found = (run.sink.toolResults[0]!.output as { messages: Record<string, unknown>[] }).messages
+      expect(found[0]).toMatchObject({ subject: 'Narudžba', sent_by_you: true, to: ['Ana Kovač'] })
+
+      anthropic.script(callTools(toolUse('search_mail', { query: 'Ponuda' })), answer('Marko.'))
+      const received = await runChat(ctx, 'Ponuda?', world().opts)
+      const item = (received.sink.toolResults[0]!.output as { messages: Record<string, unknown>[] })
+        .messages[0]!
+      expect(item).not.toHaveProperty('sent_by_you')
+      expect(item).not.toHaveProperty('to')
+
+      anthropic.script(callTools(toolUse('search_mail', { query: 'Narudžba' })), answer('Ani.'))
+      const call = await runChat(ctx, 'Što sam poslao Ani?', world('voice').opts)
+      const spoken = (call.sink.toolResults[0]!.output as { messages: Record<string, unknown>[] })
+        .messages[0]!
+      expect(spoken).toMatchObject({ sent_by_you: true, to: ['Ana Kovač'] })
+      expect(JSON.stringify(spoken)).not.toContain('@')
+    },
+  )
 })

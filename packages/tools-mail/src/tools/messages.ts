@@ -12,6 +12,7 @@ export interface GraphMessage {
   id: string
   subject?: string | null
   from?: GraphAddress | null
+  toRecipients?: GraphAddress[] | null
   receivedDateTime?: string | null
   importance?: 'low' | 'normal' | 'high' | null
   hasAttachments?: boolean | null
@@ -23,6 +24,7 @@ export const LIST_SELECT = [
   'id',
   'subject',
   'from',
+  'toRecipients',
   'receivedDateTime',
   'importance',
   'hasAttachments',
@@ -39,6 +41,9 @@ export const subjectMax = (spoken: boolean): number => (spoken ? 100 : 200)
 export interface ListItem {
   ref: string
   from: string
+  /** The user sent it (a search reaches Sent Items too): `to` names who received it (API-22). */
+  sent_by_you?: true
+  to?: string[]
   subject: string
   received: string | null
   importance?: string
@@ -62,11 +67,32 @@ export function senderName(a: GraphAddress | null | undefined, spoken: boolean):
   return personName(a, spoken) ?? 'nepoznat pošiljatelj'
 }
 
-export function listItem(m: GraphMessage, userId: string, refs: MessageRefs, spoken: boolean): ListItem {
+/** At most this many recipients are named on a message the user sent. */
+export const SENT_TO_MAX = 5
+
+/** `owner` is the signed-in user: their id for the refs, their address (`ctx.email`, the mailbox's
+ * UPN) to tell the mail they sent from the mail they received. */
+export function listItem(
+  m: GraphMessage,
+  owner: { userId: string; email: string | null },
+  refs: MessageRefs,
+  spoken: boolean,
+): ListItem {
   const preview = clip(oneLine(m.bodyPreview ?? ''), spoken ? VOICE_PREVIEW : CHAT_PREVIEW).text
+  const sender = m.from?.emailAddress?.address?.toLowerCase()
+  const sent = owner.email !== null && sender === owner.email.toLowerCase()
   const base = {
-    ref: refs.refFor(userId, m.id),
+    ref: refs.refFor(owner.userId, m.id),
     from: senderName(m.from, spoken),
+    ...(sent
+      ? {
+          sent_by_you: true as const,
+          to: (m.toRecipients ?? [])
+            .slice(0, SENT_TO_MAX)
+            .map((r) => personName(r, spoken))
+            .filter((n): n is string => n !== null),
+        }
+      : {}),
     subject: field(m.subject, subjectMax(spoken)) || '(bez predmeta)',
     received: m.receivedDateTime ? zagrebIso(m.receivedDateTime) : null,
   }

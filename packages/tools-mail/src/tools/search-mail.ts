@@ -58,7 +58,7 @@ export function searchMail(deps: MailDeps) {
         throw e
       }
       if (isAccessFailure(result)) return result
-      const messages = result.value.slice(0, top).map((m) => listItem(m, ctx.userId, deps.refs, spoken))
+      const messages = result.value.slice(0, top).map((m) => listItem(m, ctx, deps.refs, spoken))
       return { count: messages.length, messages }
     },
   })
