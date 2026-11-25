@@ -24,14 +24,14 @@
     "@livekit/agents-plugin-silero": "1.9.2",
     "@livekit/agents-plugin-soniox": "1.9.2",
     "@livekit/rtc-node": "1.1.0",
-    "@supabase/supabase-js": "2.117.3",
+    "@supabase/supabase-js": "2.119.0",
     "@va/core": "workspace:*",
     "@va/db": "workspace:*",
     "@va/integrations": "workspace:*",
     "@va/tools-demo": "workspace:*",
     "@va/tools-landmark": "workspace:*",
     "@va/tools-mail": "workspace:*",
-    "onnxruntime-node": "1.24.3",
+    "onnxruntime-node": "1.31.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
