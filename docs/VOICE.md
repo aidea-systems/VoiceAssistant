@@ -127,8 +127,9 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    `last_seen_at` off the critical path, runs the turn and logs one
    `timing` line. The model's history is the call's own rows kept in worker memory, exactly as
    the loop wrote them (user text, assistant blocks with `tool_use`, the `tool_result` rows),
-   at most 20 rows cut on a turn boundary (the newest turn always whole) and assembled by the
-   engine (`callHistory`; decision 0011). LiveKit's text-only context is not used for history: a model that saw its
+   every row of the call (no window: dropping the oldest turns would change the first message
+   and the model would refuse its earlier thinking, `CORE-16`; a call is at most 15 minutes and
+   50 turns) and assembled by the engine (`callHistory`; decision 0011). LiveKit's text-only context is not used for history: a model that saw its
    earlier answer with no lookup behind it retracted it on the next question (`VOICE-5`). The
    call's turns run one after another: a turn LiveKit starts while the cancelled one is still
    unwinding (a barge-in) waits for it, so its history carries the cut-short turn's rows and
@@ -188,7 +189,7 @@ Fixed in code, not settings: `turnDetection: 'stt'` (LiveKit's turn detector has
 `stt-rt-v5`, `languageHints: ['hr']` strict, `eleven_v4_turbo` with `language: 'hr'`, and the
 voice channel's engine settings (`docs/CORE.md` → Channels: Sonnet 5.5, `low`, `between_tools`,
 1024 tokens, 4 iterations, 6 s per tool (a confirmed write up to 20 s: once the caller said yes it
-runs to its outcome, so a turn may outlast its 25 s by that much), 25 s per request, last 20 messages, the sink's 200 ms
+runs to its outcome, so a turn may outlast its 25 s by that much), 25 s per request, the whole call as history, the sink's 200 ms
 hold, which `runVoiceTurn` takes from `settings.holdMs`).
 
 ## Latency budget and measurements
@@ -578,7 +579,7 @@ scenario's deferred rows never land in the next one's world.
 | W02        | an unknown, foreign-room, expired or idle token resolves to null; a failed lookup throws                                                                                                                                                                                                                                                                    |
 | W03        | identity cached for 60 s, re-read after (second `getUser` only once the clock moves); role change                                                                                                                                                                                                                                                           |
 | W03b, W03c | a rotated JWT, a deleted row (`call_ended`), `end()` idempotent; `touch()` with the user filter                                                                                                                                                                                                                                                             |
-| W04        | `userTurnOf`: the trailing user items are the turn, system items, the greeting and earlier turns are not; `callHistory`: tool rounds kept as written, a cut-short turn repaired; `VOICE-13`: at most 20 rows from a user row, a lone longer turn whole                                                                                                      |
+| W04        | `userTurnOf`: the trailing user items are the turn, system items, the greeting and earlier turns are not; `callHistory`: tool rounds kept as written, a cut-short turn repaired; `CORE-16`: every turn kept, each turn's history starts with the previous one's unchanged                                                                                   |
 | W05        | filler then answer in order, a flush after the filler; the tool ran with the caller's JWT                                                                                                                                                                                                                                                                   |
 | W06        | a tool outside the voice allowlist is refused at dispatch even when the model names it                                                                                                                                                                                                                                                                      |
 | W07        | rows written after the answer, chained, newest row first for the next turn, one insert                                                                                                                                                                                                                                                                      |
