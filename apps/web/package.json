@@ -13,22 +13,22 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.117.3",
+    "@supabase/supabase-js": "2.119.0",
     "i18next": "26.4.5",
-    "i18next-browser-languagedetector": "8.2.1",
-    "livekit-client": "2.22.4",
-    "lucide-react": "1.57.0",
+    "i18next-browser-languagedetector": "8.3.0",
+    "livekit-client": "2.23.0",
+    "lucide-react": "1.72.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-i18next": "17.0.16",
     "react-markdown": "10.1.0",
-    "react-router-dom": "7.18.4",
+    "react-router-dom": "7.18.5",
     "remark-gfm": "4.0.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
-    "@tailwindcss/vite": "4.3.3",
+    "@playwright/test": "1.65.0",
+    "@tailwindcss/vite": "4.3.5",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/react": "18.3.31",
@@ -36,7 +36,7 @@
     "@va/db": "workspace:*",
     "@vitejs/plugin-react": "5.2.0",
     "jsdom": "29.1.1",
-    "tailwindcss": "4.3.3",
+    "tailwindcss": "4.3.5",
     "vite-plugin-pwa": "2.0.0"
   }
 }
