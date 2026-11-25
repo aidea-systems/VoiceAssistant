@@ -341,6 +341,18 @@ export class FakeSupabase {
       return json(400, { code: 'PGRST100', message: (e as Error).message })
     }
     const { base, embedded, or } = parseFilters(params)
+    // Postgres refuses a value that is not a uuid in a uuid column's filter (22P02), as PostgREST
+    // passes it on: a caller filtering by an id it made up fails here as it does live (VOICE-23).
+    const badUuid = [...base, ...or, ...[...embedded.values()].flat()].find(
+      (c) => UUID_COLUMNS.has(c.col) && ['eq', 'neq', 'in'].includes(c.op) && !uuidArgs(c).every(isUuid),
+    )
+    if (badUuid)
+      return json(400, {
+        code: '22P02',
+        message: `invalid input syntax for type uuid: "${badUuid.arg}"`,
+        details: null,
+        hint: null,
+      })
     const rows = (this.tables[table] ??= [])
 
     try {
@@ -595,6 +607,24 @@ function resolveRelation(
 }
 
 const RESERVED = new Set(['select', 'order', 'limit', 'offset', 'columns', 'on_conflict'])
+
+// The uuid columns of the schema the fake models (text ids such as `external_id` and
+// `platform_call_id` are not among them).
+const UUID_COLUMNS = new Set([
+  'id',
+  'user_id',
+  'session_id',
+  'parent_id',
+  'auth_user_id',
+  'summary_through_message_id',
+  'caller_identity_id',
+  'created_by',
+])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isUuid = (v: string): boolean => v === 'null' || UUID_RE.test(v)
+/** The values a filter compares: one for eq/neq, the list for `in.(a,b)`. */
+const uuidArgs = (c: Cond): string[] =>
+  c.op === 'in' ? c.arg.replace(/^\(|\)$/g, '').split(',').map((v) => v.trim().replace(/^"|"$/g, '')) : [c.arg]
 
 function parseCond(col: string, expr: string): Cond {
   let negate = false

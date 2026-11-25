@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-23 (next free)
+Ids: VOICE-24 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-23 · High · Every confirmed reply on a call failed after #63 (the cap filtered by a non-uuid id)
+
+Fixed on `fix/voice-reply-cap`: the daily cap left out "its own" confirmation with `id <> …`, but a call's confirmations live in memory with ids like `cf-0001-…`, so Postgres refused the filter (22P02), the cap check threw and the reply never went out (seen live 2026-11-25: "da" recognised, no send). The exclusion now applies only to uuid ids; the fake PostgREST refuses non-uuid values in uuid columns as Postgres does, so W42 failed before the fix.
 
 ### VOICE-20 · Low · The early filler answered a greeting with "Samo trenutak." (fixed 2026-11-09)
 
