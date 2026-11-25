@@ -1,6 +1,6 @@
 # Backlog — api
 
-Ids: API-21 (next free)
+Ids: API-23 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
@@ -94,6 +94,14 @@ The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpo
   test with a hung `ai_sessions` insert
 
 ## Resolved
+
+### API-21 · Medium · send_mail refused someone the user had written to minutes before
+
+Fixed on `fix/sent-mail-checks`: the newest 50 Sent Items are read as a plain listing before the search index is asked, so a mail sent a minute ago counts (seen live 2026-11-25; test `API-21`).
+
+### API-22 · Low · Mail search results did not say which messages the user sent
+
+Fixed on `fix/sent-mail-checks`: a message from the user's own address carries `sent_by_you: true` and its recipients' names, so the model no longer reads a sent mail as received (seen live 2026-11-25; test `API-22`).
 
 ### API-16 · Low · No daily cap on replies the assistant sends
 

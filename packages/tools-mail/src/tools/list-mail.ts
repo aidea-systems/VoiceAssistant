@@ -47,7 +47,7 @@ export function listMail(deps: MailDeps) {
       const [messages, inbox] = result
       return {
         unread_count: inbox.unreadItemCount,
-        messages: messages.value.slice(0, top).map((m) => listItem(m, ctx.userId, deps.refs, spoken)),
+        messages: messages.value.slice(0, top).map((m) => listItem(m, ctx, deps.refs, spoken)),
       }
     },
   })

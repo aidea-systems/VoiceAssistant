@@ -173,7 +173,7 @@ describe('@va/tools-mail', () => {
 
       const [list] = graphCalls('/me/mailFolders/inbox/messages')
       expect(Object.fromEntries(list!.query)).toEqual({
-        $select: 'id,subject,from,receivedDateTime,importance,hasAttachments,isRead,bodyPreview',
+        $select: 'id,subject,from,toRecipients,receivedDateTime,importance,hasAttachments,isRead,bodyPreview',
         $top: '10',
         $orderby: 'receivedDateTime desc',
         $filter: 'receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false',
