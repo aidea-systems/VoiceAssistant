@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-24 (next free)
+Ids: VOICE-25 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-24 · Medium · The call did not hang up when the caller said goodbye
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: "doviđenja" was answered and the line stayed open): a closed set of goodbyes (`isGoodbye`) ends the call after the answer has played, like the cap's goodbye.
 
 ### VOICE-23 · High · Every confirmed reply on a call failed after #63 (the cap filtered by a non-uuid id)
 

@@ -140,7 +140,11 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    the session reports it (`onEnded`) and the worker hangs up once that reply's speech has
    played out (`HangUp` waits for the `SpeechHandle` LiveKit created for the turn, or 10 s of
    grace; an earlier answer still draining does not pre-empt it, `V-2`); a question that still
-   arrives hears nothing (`VOICE-11`).
+   arrives hears nothing (`VOICE-11`). The caller's own goodbye ends the call the same way
+   (`caller_goodbye`, `VOICE-24`): when the whole utterance is one of a closed set
+   (`isGoodbye` in `answers.ts`: "doviđenja", "hvala, doviđenja", "to je sve", "laku noć",
+   "čujemo se" …; not "bok" alone, which is as often a greeting, nor plain "hvala"), the model
+   answers it, then the call hangs up once that answer has played.
    After a barge-in the rows keep the whole answer the model wrote, not what was played
    (decision 0011, `VOICE-10`).
 7. While the participant is connected the worker bumps `last_seen_at` every minute, so a quiet
@@ -589,6 +593,7 @@ scenario's deferred rows never land in the next one's world.
 | W10        | the voice model profile (Sonnet 5.5, `between_tools`, low, fallbacks + beta) on every request                                                                                                                                                                                                                                                               |
 | W11, W12   | a model error is spoken and the stream ends; a refusal with nothing spoken says the decline                                                                                                                                                                                                                                                                 |
 | W13        | the metrics writer refuses content keys; `VOICE-6`: a `turns.jsonl` line joins the user item's Soniox delays with the reply's model, TTS and e2e figures, built from real 1.9.2 `ChatMessage` items; the greeting is not a turn                                                                                                                             |
+| VOICE-24   | the caller's goodbye from a closed set: answered, then `onEnded('caller_goodbye')`, later speech unanswered; a greeting or plain thanks does not end the call                                                                                                                                                                                               |
 | VOICE-11   | past the 15-minute cap (a gone row) the caller hears the goodbye once, `onEnded` fires once, no model is called; `HangUp` waits for the agent's last line or 10 s, runs once (VOICE-11b–d)                                                                                                                                                                  |
 | VOICE-12   | `participantLeft`: only the caller's identity (the user id) ends the call; `sessionErrorAction`: a recoverable provider error is logged, an unrecoverable one is spoken and hangs up, not spoken after a TTS failure                                                                                                                                        |
 | W14        | the cap is 50 turns per call; past it the caller hears `rate_limited` and no model is called (pinned with a cap of 1); an expired JWT is `unauthorized`, a failed lookup `internal_error`                                                                                                                                                                   |

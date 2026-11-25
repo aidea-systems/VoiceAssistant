@@ -17,7 +17,7 @@ import {
   type SpokenEnd,
 } from '@va/core'
 
-import { classifyAnswer } from './answers.js'
+import { classifyAnswer, isGoodbye } from './answers.js'
 import type { CallIdentity } from './call.js'
 import { LOG_TAG, type VoiceDeps } from './config.js'
 import { withDeadline } from './deadline.js'
@@ -67,9 +67,10 @@ export interface CallSessionOptions {
   userContextTimeoutMs?: number
   pickFiller?: () => string
   pickEarlyFiller?: () => string
-  /** Called once, after the goodbye was handed to the stream, when the call's row is gone (the
-   * 15-minute cap, or the API's end): the owner hangs up. */
-  onEnded?: (reason: 'call_ended') => void
+  /** Called once, after the goodbye was handed to the stream: when the call's row is gone (the
+   * 15-minute cap, or the API's end; `call_ended`) or after the answer to the caller's own
+   * goodbye (`caller_goodbye`, VOICE-24). The owner hangs up once that speech has played. */
+  onEnded?: (reason: 'call_ended' | 'caller_goodbye') => void
 }
 
 export class CallSession {
@@ -266,6 +267,13 @@ export class CallSession {
     })
     this.saves = result.persisted
     this.rows.push(...result.rows)
+    // The caller said goodbye and heard the answer to it: the call ends after that line plays,
+    // and anything said before the line drops is not answered (VOICE-24).
+    if (result.outcome === 'completed' && isGoodbye(io.userText)) {
+      this.ended = true
+      log('info', LOG_TAG, 'caller goodbye', { ...ids, turn: this.turns })
+      this.options.onEnded?.('caller_goodbye')
+    }
     // Where a turn's time goes: identity, then the model and tools until the first spoken text,
     // then the rest of the answer; the marks say when each model call and tool round started
     // and ended (`docs/OPS.md` → log fields).

@@ -250,17 +250,24 @@ describe('a spoken turn', () => {
     }
   })
 
-  scenario('API-18 a call that crosses midnight keeps its date: system is byte-identical on every request', async () => {
-    let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
-    anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
-    const call = await openCall({ clock: () => now })
-    await (await ask(call, 'Bok')).done
-    now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
-    await (await ask(call, 'Jeste li još tu?')).done
-    const [one, two] = anthropic.calls.map((c) => c.body.system as Array<{ text: string }>)
-    expect(two).toEqual(one)
-    expect(one!.at(-1)!.text).toBe('Danas je utorak, 24. studenoga 2026.')
-  })
+  scenario(
+    'API-18 a call that crosses midnight keeps its date: system is byte-identical on every request',
+    async () => {
+      let now = new Date('2026-11-24T22:59:00Z') // 23:59 in Zagreb
+      anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
+      const call = await openCall({ clock: () => now })
+      await (
+        await ask(call, 'Bok')
+      ).done
+      now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
+      await (
+        await ask(call, 'Jeste li još tu?')
+      ).done
+      const [one, two] = anthropic.calls.map((c) => c.body.system as Array<{ text: string }>)
+      expect(two).toEqual(one)
+      expect(one!.at(-1)!.text).toBe('Danas je utorak, 24. studenoga 2026.')
+    },
+  )
 
   scenario('VOICE-7 the timing line carries the marks with their times, name@ms, in order', async () => {
     anthropic.script(callTools(toolUse('search_items', { query: 'a' })), answer('Da.'))
@@ -412,6 +419,36 @@ describe('a spoken turn', () => {
       expect(again.text).toBe('')
       expect(ended).toEqual(['call_ended'])
       expect(anthropic.calls).toHaveLength(0)
+    },
+  )
+
+  scenario(
+    'VOICE-24 the caller says goodbye: the model answers it, then the session reports the end; a greeting or thanks does not',
+    async () => {
+      const ended: string[] = []
+      const call = await openCall({ onEnded: (reason) => ended.push(reason) })
+      anthropic.script(
+        answer('Dobar dan, izvolite.'),
+        answer('Nema na čemu.'),
+        answer('Doviđenja, ugodan dan!'),
+      )
+      await (
+        await ask(call, 'Bok.')
+      ).done
+      await (
+        await ask(call, 'Hvala.')
+      ).done
+      await call.session.settle()
+      expect(ended).toEqual([])
+      const out = await (await ask(call, 'Hvala, doviđenja.')).done
+      expect(out.text).toBe('Doviđenja, ugodan dan!')
+      await call.session.settle()
+      expect(ended).toEqual(['caller_goodbye'])
+      expect(logs.some((l) => l.line.includes('"caller goodbye"'))).toBe(true)
+      // Anything the caller still says before the line drops is not answered.
+      const late = await (await ask(call, 'Halo?')).done
+      expect(late.text).toBe('')
+      expect(anthropic.calls).toHaveLength(3)
     },
   )
 
