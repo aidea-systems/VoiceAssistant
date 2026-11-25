@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-25 (next free)
+Ids: VOICE-26 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-25 · Medium · The first question of a call was slow (5–10 s): it ran before the warm-up had written the cache
+
+Fixed on `fix/phone-call-fixes` (seen live 2026-11-25: turn 1 `cache_read_tokens: 0`, first event after 4.9 s and 10.4 s): a turn waits for a warm-up still in flight, at most 3 s, then reads the cache; `warm_wait_ms` in the timing line shows the wait.
 
 ### VOICE-24 · Medium · The call did not hang up when the caller said goodbye
 

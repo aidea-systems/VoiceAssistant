@@ -113,7 +113,10 @@ The sink logic (held first sentence, one filler per turn, `speakable()`) lives i
 now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is never logged.
 4. The warm-up starts without being awaited: `identity.ctx()` then `warm()` (a `max_tokens: 0`
    request with the exact model, system, tools, thinking and effort of a real turn) while the
-   greeting plays, logged to `warm.jsonl`.
+   greeting plays, logged to `warm.jsonl`. A turn that starts while it is still running waits
+   for it, at most `WARM_WAIT_MS` (3 s), so the first question reads the cache instead of
+   writing it a second time in parallel (`VOICE-25`: live, a first question without the cache
+   took 5–10 s); the wait is the timing line's `warm_wait_ms`.
 5. The `AgentSession` starts with the providers and the turn-handling settings below
    (`turnDetection: 'stt'`, `interruption.mode: 'vad'`, **preemptive generation off**: LiveKit
    would otherwise run the engine on partial transcripts, count those against the call and
@@ -416,7 +419,7 @@ The phone channel adds `phone refused` (`reason`, a `number_hash` or the identit
 (`outcome`, `reason`, `pin_used`, `ms`), `pin wrong` / `pin locked` (`failures`, `lock_ms`),
 `phone rate limited`, `phone call started`, `call refused`, `session revoke failed`, `room delete
 failed`: never a number, a digit, a token or a link hash. Then the shared lines:
-`timing` per turn (`auth_ms`, `first_text_ms`, `total_ms`, the engine's marks as `name@ms`,
+`timing` per turn (`auth_ms`, `warm_wait_ms`, `first_text_ms`, `total_ms`, the engine's marks as `name@ms`,
 `spoken_len`, token and cache counts, `outcome`), `turn dropped`, `turn limit reached`, `identity timeout`
 (with `timeout_ms`), `identity refused`, `call ended` (the cap), `call ending` (with its
 `reason`).

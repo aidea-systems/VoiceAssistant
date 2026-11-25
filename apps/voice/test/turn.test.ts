@@ -452,6 +452,39 @@ describe('a spoken turn', () => {
     },
   )
 
+  scenario(
+    'VOICE-25 the first question waits for a warm-up still in flight, so it reads the prompt cache; never longer than the limit',
+    async () => {
+      let warmed!: () => void
+      const call = await openCall({ warmWaitMs: 200 })
+      call.session.warming(new Promise<void>((resolve) => (warmed = resolve)))
+      anthropic.script(answer('Dobar dan.'))
+      const pending = ask(call, 'Dobar dan.')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(anthropic.calls).toHaveLength(0)
+      warmed()
+      await (
+        await pending
+      ).done
+      await call.session.settle()
+      expect(anthropic.calls).toHaveLength(1)
+      const timing = logs.find((l) => l.line.includes('"timing"') && l.line.includes('"turn":1'))!
+      expect(timing.line).toMatch(/"warm_wait_ms":\d+/)
+    },
+  )
+
+  scenario('VOICE-25b a warm-up that never finishes holds the first question at most the limit', async () => {
+    const stuck = await openCall({ warmWaitMs: 100 })
+    stuck.session.warming(new Promise<void>(() => {}))
+    anthropic.script(answer('Dobar dan.'))
+    const t0 = Date.now()
+    await (
+      await ask(stuck, 'Dobar dan.')
+    ).done
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(anthropic.calls).toHaveLength(1)
+  })
+
   scenario('W14c a failed identity lookup is spoken as internal_error, not as "not signed in"', async () => {
     const call = await openCall()
     await call.identity.ctx()

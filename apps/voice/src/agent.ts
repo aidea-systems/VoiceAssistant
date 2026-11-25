@@ -205,11 +205,14 @@ export default defineAgent<UserData>({
     // catalogue; its read logs its own failure and the call goes without it) and write the prompt
     // cache with the blocks a turn will send.
     const t0 = Date.now()
-    void identity
+    const warmed = identity
       .ctx()
       .then(async (auth) =>
         warm(callDeps, auth, await call.userContextFor(auth), await call.allowedToolsFor(auth), call.date),
       )
+    // The first question waits for it (at most WARM_WAIT_MS) and then reads the cache (VOICE-25).
+    call.warming(warmed)
+    void warmed
       .then((r) => metrics.write('warm.jsonl', { room, ...r }))
       .catch((err: unknown) => {
         log('warn', LOG_TAG, 'warm failed', {
