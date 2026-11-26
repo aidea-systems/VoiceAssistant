@@ -116,7 +116,10 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    greeting plays, logged to `warm.jsonl`. A turn that starts while it is still running waits
    for it, at most `WARM_WAIT_MS` (3 s), so the first question reads the cache instead of
    writing it a second time in parallel (`VOICE-25`: live, a first question without the cache
-   took 5–10 s); the wait is the timing line's `warm_wait_ms`.
+   took 5–10 s); the wait is the timing line's `warm_wait_ms`. The wait (and the first turn's
+   per-user reads) happens inside `runVoiceTurn` after the sink exists, so the early filler's
+   clock covers it: a first question hears "Samo trenutak." at `fillerAfterMs`, not after the
+   setup (`VOICE-28`; live, the first sound of turn 1 came at 3.4 s).
 5. The `AgentSession` starts with the providers and the turn-handling settings below
    (`turnDetection: 'stt'`, `interruption.mode: 'vad'`, **preemptive generation off**: LiveKit
    would otherwise run the engine on partial transcripts, count those against the call and

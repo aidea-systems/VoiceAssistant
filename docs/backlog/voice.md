@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-28 (next free)
+Ids: VOICE-30 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-28 · Medium · The first question's filler came only after the call's setup (~2.8 s)
+
+Fixed on `fix/call-first-sound` (seen live 2026-11-25: turn 1 `e2e_ms` 3.4 s against 0.9 s for every later turn): `runVoiceTurn` builds the sink first and awaits the per-user reads and the warm-up after, so the early filler's clock covers the wait.
 
 ### VOICE-27 · Low · A model request the SDK retried left no trace, so a slow turn could not be explained
 

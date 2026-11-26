@@ -266,14 +266,14 @@ export class CallSession {
     }
     const authMs = Math.round(performance.now() - t0)
     this.identity.touch()
-    const [userContext, allowed] = await Promise.all([this.userContextFor(ctx), this.allowedToolsFor(ctx)])
+    // The per-user reads and the warm-up are awaited inside the turn, after its filler clock
+    // starts (VOICE-28); on later turns they are already settled.
+    const ready = Promise.all([this.userContextFor(ctx), this.allowedToolsFor(ctx)]).then(
+      ([userContext, allowed]) => ({ userContext, allowed }),
+    )
     // A pending write: "da" carries its id into dispatch, "ne" settles it, anything else is a
     // plain turn with the write still waiting (Part 12b). Decided here, never by the model.
     const confirmation = await this.answerPending(io.userText, ids)
-    // The first question of a call often arrives while the warm-up is still writing the cache.
-    const warmStarted = performance.now()
-    if (this.warm) await withDeadline(this.warm, this.warmWaitMs)
-    const warmWaitMs = Math.round(performance.now() - warmStarted)
     const result = await runVoiceTurn({
       deps: this.deps,
       ctx,
@@ -285,13 +285,14 @@ export class CallSession {
       end: io.end,
       signal: io.signal,
       confirmations: this.confirmations,
-      allowed,
+      ready,
+      warm: this.warm,
+      warmWaitMs: this.warmWaitMs,
       ...(confirmation ? { confirmation } : {}),
       onConfirm: (c) => {
         this.pendingConfirmation = c
       },
       persistAfter: this.saves,
-      userContext,
       date: this.date,
       ...(this.options.pickFiller ? { pickFiller: this.options.pickFiller } : {}),
       ...(this.options.pickEarlyFiller ? { pickEarlyFiller: this.options.pickEarlyFiller } : {}),
@@ -312,7 +313,7 @@ export class CallSession {
       ...ids,
       turn: this.turns,
       auth_ms: authMs,
-      warm_wait_ms: warmWaitMs,
+      warm_wait_ms: result.warmWaitMs,
       first_text_ms: result.firstTextMs,
       first_answer_ms: result.firstAnswerMs,
       total_ms: result.totalMs,

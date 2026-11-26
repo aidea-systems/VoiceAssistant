@@ -473,6 +473,27 @@ describe('a spoken turn', () => {
     },
   )
 
+  scenario(
+    "VOICE-28 the early filler is spoken while the first question still waits for the call's setup, not after it",
+    async () => {
+      let warmed!: () => void
+      const call = await openCall({ warmWaitMs: 2_000, settings: { fillerAfterMs: 100 } })
+      call.session.warming(new Promise<void>((resolve) => (warmed = resolve)))
+      setTimeout(() => warmed(), 400)
+      anthropic.script(answer('Postoje tri stola.'))
+      const out = await (await ask(call, 'Koji stolovi postoje?')).done
+      // The filler came first, during the wait; the model was called only after the warm-up.
+      expect(out.text.startsWith(EARLY_FILLER)).toBe(true)
+      expect(out.text).toContain('Postoje tri stola.')
+      expect(anthropic.calls).toHaveLength(1)
+      await call.session.settle()
+      const timing = logs.find((l) => l.line.includes('"timing"') && l.line.includes('"turn":1'))!
+      const fields = JSON.parse(timing.line) as { first_text_ms: number; warm_wait_ms: number }
+      expect(fields.warm_wait_ms).toBeGreaterThanOrEqual(300)
+      expect(fields.first_text_ms).toBeLessThan(fields.warm_wait_ms)
+    },
+  )
+
   scenario('VOICE-25b a warm-up that never finishes holds the first question at most the limit', async () => {
     const stuck = await openCall({ warmWaitMs: 100 })
     stuck.session.warming(new Promise<void>(() => {}))
