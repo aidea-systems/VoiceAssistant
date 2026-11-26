@@ -116,7 +116,10 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    greeting plays, logged to `warm.jsonl`. A turn that starts while it is still running waits
    for it, at most `WARM_WAIT_MS` (3 s), so the first question reads the cache instead of
    writing it a second time in parallel (`VOICE-25`: live, a first question without the cache
-   took 5–10 s); the wait is the timing line's `warm_wait_ms`.
+   took 5–10 s); the wait is the timing line's `warm_wait_ms`. The wait (and the first turn's
+   per-user reads) happens inside `runVoiceTurn` after the sink exists, so the early filler's
+   clock covers it: a first question hears "Samo trenutak." at `fillerAfterMs`, not after the
+   setup (`VOICE-28`; live, the first sound of turn 1 came at 3.4 s).
 5. The `AgentSession` starts with the providers and the turn-handling settings below
    (`turnDetection: 'stt'`, `interruption.mode: 'vad'`, **preemptive generation off**: LiveKit
    would otherwise run the engine on partial transcripts, count those against the call and
@@ -144,7 +147,12 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    played out (`HangUp` waits for the `SpeechHandle` LiveKit created for the turn, or 10 s of
    grace; an earlier answer still draining does not pre-empt it, `V-2`); a question that still
    arrives hears nothing (`VOICE-11`). The caller's own goodbye ends the call the same way
-   (`caller_goodbye`, `VOICE-24`): when the whole utterance is one of a closed set
+   (`caller_goodbye`, `VOICE-24`). Greetings, plain thanks and goodbyes are answered at once
+   with a fixed line and no model call (`courtesyReply` in `answers.ts`, `VOICE-29`): a mirrored
+   greeting + "Kako vam mogu pomoći?" ("Halo" → "Tu sam, izvolite."), "Nema na čemu.",
+   "Doviđenja, ugodan dan!" (then the hang-up); the user row and the fixed line join the call's
+   rows and are saved like any turn (the assistant row has no model), so the model's history
+   sees them; not while a write waits for the caller's answer. The goodbye set: when the whole utterance is one of a closed set
    (`isGoodbye` in `answers.ts`: "doviđenja", "hvala, doviđenja", "to je sve", "laku noć",
    "čujemo se" …; not "bok" alone, which is as often a greeting, nor plain "hvala"), the model
    answers it, then the call hangs up once that answer has played.

@@ -85,3 +85,34 @@ const GOODBYE = new Set([
 export function isGoodbye(text: string): boolean {
   return GOODBYE.has(normalizeAnswer(text))
 }
+
+// Fixed replies (VOICE-29): a greeting, plain thanks or a goodbye is answered at once with one
+// of these lines, no model call, so it sounds in a fraction of a second instead of after the
+// model's ~2 s (it gets no filler, VOICE-20). Matched whole like the yeses: "dobar dan, koliko
+// košta stol?" is a question for the model. Short and neutral by the user's choice
+// (2026-11-26). <!-- needs native review -->
+const GREETINGS: ReadonlyMap<string, string> = new Map([
+  ['dobar dan', 'Dobar dan! Kako vam mogu pomoći?'],
+  ['dobro jutro', 'Dobro jutro! Kako vam mogu pomoći?'],
+  ['dobra vecer', 'Dobra večer! Kako vam mogu pomoći?'],
+  ['dobar vecer', 'Dobra večer! Kako vam mogu pomoći?'],
+  ['bok', 'Bok! Kako vam mogu pomoći?'],
+  ['zdravo', 'Zdravo! Kako vam mogu pomoći?'],
+  ['pozdrav', 'Pozdrav! Kako vam mogu pomoći?'],
+  ['halo', 'Tu sam, izvolite.'],
+])
+const THANKS = new Set(['hvala', 'hvala lijepa', 'hvala vam', 'puno hvala', 'hvala puno', 'hvala ti'])
+export const THANKS_LINE = 'Nema na čemu.'
+export const GOODBYE_LINE = 'Doviđenja, ugodan dan!'
+
+export type CourtesyKind = 'greeting' | 'thanks' | 'goodbye'
+
+/** The fixed answer to a courtesy turn, or null when the turn is anything else. */
+export function courtesyReply(text: string): { kind: CourtesyKind; line: string } | null {
+  const n = normalizeAnswer(text)
+  const greeting = GREETINGS.get(n)
+  if (greeting) return { kind: 'greeting', line: greeting }
+  if (THANKS.has(n)) return { kind: 'thanks', line: THANKS_LINE }
+  if (GOODBYE.has(n)) return { kind: 'goodbye', line: GOODBYE_LINE }
+  return null
+}

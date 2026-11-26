@@ -27,6 +27,7 @@ import {
 } from '@va/core'
 
 import { LOG_TAG, type VoiceDeps, voiceLoopConfig } from './config.js'
+import { withDeadline } from './deadline.js'
 import type { CallRow } from './messages.js'
 
 /** Rows kept in memory and written after the answer, chained by ids chosen here. */
@@ -107,6 +108,13 @@ export interface VoiceTurnInput {
   userContext?: readonly string[]
   /** The packs' per-user gate for this turn (`CallSession.allowedToolsFor`); null is no restriction. */
   allowed?: AllowedTools
+  /** The two above while they are still being read (the first turn of a call): awaited after the
+   * sink exists, so the early filler's clock covers the wait (VOICE-28). Wins over the fields. */
+  ready?: Promise<{ userContext: readonly string[]; allowed: AllowedTools }>
+  /** The call's warm-up still writing the prompt cache: awaited, at most `warmWaitMs`, inside the
+   * same window (VOICE-25). */
+  warm?: Promise<unknown> | null
+  warmWaitMs?: number
   /** The call's date line, fixed at its start (`CallSession.date`, API-18). */
   date?: string
 }
@@ -126,6 +134,8 @@ export interface VoiceTurnResult {
   /** When the first text of the answer itself went to `say` (no filler counts). */
   firstAnswerMs: number | null
   totalMs: number
+  /** How long the turn waited for the call's setup and warm-up before the model call. */
+  warmWaitMs: number
   /** The loop's marks in order, each with its time: model time against tool time. */
   marks: TimedMark[]
   usage: UsageReport
@@ -139,14 +149,6 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
   const { deps, ctx, sessionId, userText, requestId, signal } = input
   const t0 = performance.now()
   const ids = { request_id: requestId, user_id: ctx.userId, session_id: sessionId }
-  const config = voiceLoopConfig(
-    deps,
-    ctx,
-    input.confirmations,
-    input.userContext,
-    input.allowed ?? null,
-    input.date,
-  )
   const settings = deps.settings
 
   const sink = new SpokenTextSink(input.say, input.end, {
@@ -199,7 +201,24 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
     { role: 'user', content: [{ type: 'text', text: userText }] },
   ]
 
+  let warmWaitMs = 0
   try {
+    // The call's setup (the first turn's per-user reads and the warm-up) is awaited here, after
+    // the sink exists: the early filler covers the wait instead of following it (VOICE-28).
+    const setupStarted = performance.now()
+    const setup = input.ready
+      ? await input.ready
+      : { userContext: input.userContext ?? [], allowed: input.allowed ?? null }
+    if (input.warm) await withDeadline(input.warm, input.warmWaitMs ?? 0)
+    warmWaitMs = Math.round(performance.now() - setupStarted)
+    const config = voiceLoopConfig(
+      deps,
+      ctx,
+      input.confirmations,
+      setup.userContext,
+      setup.allowed,
+      input.date,
+    )
     await runOrchestrationLoop(
       ctx,
       config,
@@ -253,6 +272,7 @@ export async function runVoiceTurn(input: VoiceTurnInput): Promise<VoiceTurnResu
     firstTextMs: sink.firstOutputAt === null ? null : Math.round(sink.firstOutputAt - t0),
     firstAnswerMs: sink.firstAnswerAt === null ? null : Math.round(sink.firstAnswerAt - t0),
     totalMs: Math.round(performance.now() - t0),
+    warmWaitMs,
     marks,
     usage,
     persisted,

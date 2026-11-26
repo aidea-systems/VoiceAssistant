@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-28 (next free)
+Ids: VOICE-30 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,14 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-29 · Medium · Greetings, thanks and goodbyes waited ~2 s in silence for the model
+
+Fixed on `fix/call-first-sound` (seen live 2026-11-25: "Dobar dan" 3.4 s, the goodbye 2.1 s, both without a filler by design, VOICE-20): a closed set is answered at once with a fixed line, no model call; the exchange still joins the call's history and rows.
+
+### VOICE-28 · Medium · The first question's filler came only after the call's setup (~2.8 s)
+
+Fixed on `fix/call-first-sound` (seen live 2026-11-25: turn 1 `e2e_ms` 3.4 s against 0.9 s for every later turn): `runVoiceTurn` builds the sink first and awaits the per-user reads and the warm-up after, so the early filler's clock covers the wait.
 
 ### VOICE-27 · Low · A model request the SDK retried left no trace, so a slow turn could not be explained
 

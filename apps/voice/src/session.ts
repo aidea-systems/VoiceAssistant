@@ -16,14 +16,15 @@ import {
   MESSAGES_HR,
   type SpokenEnd,
 } from '@va/core'
+import type { Json } from '@va/db'
 
-import { classifyAnswer, isGoodbye } from './answers.js'
+import { classifyAnswer, courtesyReply, type CourtesyKind, isGoodbye } from './answers.js'
 import type { CallIdentity } from './call.js'
 import { LOG_TAG, type VoiceDeps } from './config.js'
 import { withDeadline } from './deadline.js'
 import { CALL_ENDED_HR } from './greeting.js'
 import { type CallRow, callHistory } from './messages.js'
-import { runVoiceTurn, type VoiceTurnResult } from './turn.js'
+import { persistTurn, runVoiceTurn, type VoiceTurnResult } from './turn.js'
 
 /** What the caller hears when the identity cannot be read (`call_ended` is handled before). */
 export function identityCode(
@@ -266,14 +267,21 @@ export class CallSession {
     }
     const authMs = Math.round(performance.now() - t0)
     this.identity.touch()
-    const [userContext, allowed] = await Promise.all([this.userContextFor(ctx), this.allowedToolsFor(ctx)])
+    // A greeting, plain thanks or a goodbye: the fixed line at once, no model call (VOICE-29).
+    // Not while a write waits for the caller's answer: there "hvala" is the model's to read.
+    const courtesy = this.pendingConfirmation ? null : courtesyReply(io.userText)
+    if (courtesy) {
+      await this.answerCourtesy(courtesy, io, ctx, ids, authMs)
+      return null
+    }
+    // The per-user reads and the warm-up are awaited inside the turn, after its filler clock
+    // starts (VOICE-28); on later turns they are already settled.
+    const ready = Promise.all([this.userContextFor(ctx), this.allowedToolsFor(ctx)]).then(
+      ([userContext, allowed]) => ({ userContext, allowed }),
+    )
     // A pending write: "da" carries its id into dispatch, "ne" settles it, anything else is a
     // plain turn with the write still waiting (Part 12b). Decided here, never by the model.
     const confirmation = await this.answerPending(io.userText, ids)
-    // The first question of a call often arrives while the warm-up is still writing the cache.
-    const warmStarted = performance.now()
-    if (this.warm) await withDeadline(this.warm, this.warmWaitMs)
-    const warmWaitMs = Math.round(performance.now() - warmStarted)
     const result = await runVoiceTurn({
       deps: this.deps,
       ctx,
@@ -285,13 +293,14 @@ export class CallSession {
       end: io.end,
       signal: io.signal,
       confirmations: this.confirmations,
-      allowed,
+      ready,
+      warm: this.warm,
+      warmWaitMs: this.warmWaitMs,
       ...(confirmation ? { confirmation } : {}),
       onConfirm: (c) => {
         this.pendingConfirmation = c
       },
       persistAfter: this.saves,
-      userContext,
       date: this.date,
       ...(this.options.pickFiller ? { pickFiller: this.options.pickFiller } : {}),
       ...(this.options.pickEarlyFiller ? { pickEarlyFiller: this.options.pickEarlyFiller } : {}),
@@ -312,7 +321,7 @@ export class CallSession {
       ...ids,
       turn: this.turns,
       auth_ms: authMs,
-      warm_wait_ms: warmWaitMs,
+      warm_wait_ms: result.warmWaitMs,
       first_text_ms: result.firstTextMs,
       first_answer_ms: result.firstAnswerMs,
       total_ms: result.totalMs,
@@ -325,6 +334,68 @@ export class CallSession {
       outcome: result.outcome,
     })
     return result
+  }
+
+  /** The fixed answer to a courtesy turn: spoken, added to the call's rows (the model's history
+   * sees the exchange) and saved in order with the other turns; a goodbye then ends the call
+   * after the line has played. */
+  private async answerCourtesy(
+    reply: { kind: CourtesyKind; line: string },
+    io: TurnIO,
+    ctx: AuthContext,
+    ids: Record<string, unknown>,
+    authMs: number,
+  ): Promise<void> {
+    const t0 = performance.now()
+    await io.say(reply.line)
+    const firstTextMs = Math.round(performance.now() - t0)
+    await io.end('done')
+    const userRow: CallRow = {
+      id: randomUUID(),
+      role: 'user',
+      turn_kind: 'user',
+      content: [{ type: 'text', text: io.userText }] as Json,
+      parent_id: null,
+    }
+    const replyRow: CallRow = {
+      id: randomUUID(),
+      role: 'assistant',
+      turn_kind: 'assistant',
+      content: [{ type: 'text', text: reply.line }] as Json,
+      parent_id: userRow.id,
+      model: null,
+    }
+    this.rows.push(userRow, replyRow)
+    const sessionId = this.identity.sessionId
+    this.saves = this.saves
+      .catch(() => {})
+      .then(() => persistTurn(ctx.serviceClient, sessionId, userRow.id, io.userText, [replyRow]))
+      .catch((err: unknown) => {
+        log('error', LOG_TAG, 'persist failed', { ...ids, rows: 2, reason: errorReason(err) })
+      })
+    this.track(this.saves)
+    log('info', LOG_TAG, 'courtesy reply', { ...ids, turn: this.turns, kind: reply.kind })
+    log('info', LOG_TAG, 'timing', {
+      ...ids,
+      turn: this.turns,
+      auth_ms: authMs,
+      warm_wait_ms: 0,
+      first_text_ms: firstTextMs,
+      first_answer_ms: firstTextMs,
+      total_ms: Math.round(performance.now() - t0),
+      marks: '',
+      spoken_len: reply.line.length,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      outcome: 'courtesy',
+    })
+    if (reply.kind === 'goodbye') {
+      this.ended = true
+      log('info', LOG_TAG, 'caller goodbye', { ...ids, turn: this.turns })
+      this.options.onEnded?.('caller_goodbye')
+    }
   }
 
   private async answerPending(
