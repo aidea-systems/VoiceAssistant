@@ -143,7 +143,7 @@ describe('a spoken turn', () => {
       expect(clientOf(inserts[0]!)).toBe('service')
 
       await (
-        await ask(call, 'Hvala.', [
+        await ask(call, 'A koliko košta stol?', [
           { role: 'user', text: 'Koliko košta lampa?' },
           { role: 'assistant', text: 'Stolna lampa košta pedeset eura.' },
         ])
@@ -257,7 +257,7 @@ describe('a spoken turn', () => {
       anthropic.script(answer('Dobra večer.'), answer('I dalje ste tu.'))
       const call = await openCall({ clock: () => now })
       await (
-        await ask(call, 'Bok')
+        await ask(call, 'Koliko je sati?')
       ).done
       now = new Date('2026-11-24T23:01:00Z') // 00:01 the next day
       await (
@@ -300,7 +300,7 @@ describe('a spoken turn', () => {
       const out = await (await ask(call, 'Koliko košta stolna lampa?')).done
       expect(out.text).toBe('Stolna lampa košta četrdeset devet eura i devedeset centi.')
       await (
-        await ask(call, 'Hvala.')
+        await ask(call, 'A stolica?')
       ).done
       await call.session.settle()
 
@@ -363,7 +363,7 @@ describe('a spoken turn', () => {
   scenario('W11 a model error is spoken and the stream ends; only the user row is written', async () => {
     anthropic.script({ error: { status: 500, type: 'api_error', message: 'boom' } })
     const call = await openCall()
-    const out = await (await ask(call, 'Halo?')).done
+    const out = await (await ask(call, 'Koliko košta stol?')).done
     expect(out.text).toBe(MESSAGES_HR.model_error)
     await call.session.settle()
     expect(kinds(call.sessionId)).toEqual(['user'])
@@ -423,15 +423,10 @@ describe('a spoken turn', () => {
   )
 
   scenario(
-    'VOICE-24 the caller says goodbye: the model answers it, then the session reports the end; a greeting or thanks does not',
+    'VOICE-24 the caller says goodbye: the fixed goodbye is spoken (VOICE-29), then the session reports the end; a greeting or thanks does not; later speech is not answered',
     async () => {
       const ended: string[] = []
       const call = await openCall({ onEnded: (reason) => ended.push(reason) })
-      anthropic.script(
-        answer('Dobar dan, izvolite.'),
-        answer('Nema na čemu.'),
-        answer('Doviđenja, ugodan dan!'),
-      )
       await (
         await ask(call, 'Bok.')
       ).done
@@ -446,9 +441,9 @@ describe('a spoken turn', () => {
       expect(ended).toEqual(['caller_goodbye'])
       expect(logs.some((l) => l.line.includes('"caller goodbye"'))).toBe(true)
       // Anything the caller still says before the line drops is not answered.
-      const late = await (await ask(call, 'Halo?')).done
+      const late = await (await ask(call, 'Koliko košta stol?')).done
       expect(late.text).toBe('')
-      expect(anthropic.calls).toHaveLength(3)
+      expect(anthropic.calls).toHaveLength(0)
     },
   )
 
@@ -458,8 +453,8 @@ describe('a spoken turn', () => {
       let warmed!: () => void
       const call = await openCall({ warmWaitMs: 200 })
       call.session.warming(new Promise<void>((resolve) => (warmed = resolve)))
-      anthropic.script(answer('Dobar dan.'))
-      const pending = ask(call, 'Dobar dan.')
+      anthropic.script(answer('Postoje tri stola.'))
+      const pending = ask(call, 'Koji stolovi postoje?')
       await new Promise((r) => setTimeout(r, 50))
       expect(anthropic.calls).toHaveLength(0)
       warmed()
@@ -470,6 +465,46 @@ describe('a spoken turn', () => {
       expect(anthropic.calls).toHaveLength(1)
       const timing = logs.find((l) => l.line.includes('"timing"') && l.line.includes('"turn":1'))!
       expect(timing.line).toMatch(/"warm_wait_ms":\d+/)
+    },
+  )
+
+  scenario(
+    'VOICE-29 greetings, thanks and goodbyes are answered at once with a fixed line and no model call; the model still sees them; a longer greeting is a question',
+    async () => {
+      const ended: string[] = []
+      const call = await openCall({ onEnded: (reason) => ended.push(reason) })
+      const greeting = await (await ask(call, 'Dobar dan.')).done
+      expect(greeting.text).toBe('Dobar dan! Kako vam mogu pomoći?')
+      expect(anthropic.calls).toHaveLength(0)
+
+      anthropic.script(answer('Postoje tri stola.'))
+      await (
+        await ask(call, 'Koji stolovi postoje?')
+      ).done
+      expect(anthropic.calls).toHaveLength(1)
+      // The fixed exchange is in the model's history, in order, before the question.
+      const sent = anthropic.calls[0]!.body.messages.map((m) => JSON.stringify(m.content))
+      expect(sent[0]).toContain('Dobar dan.')
+      expect(sent[1]).toContain('Dobar dan! Kako vam mogu pomoći?')
+      expect(sent[2]).toContain('Koji stolovi postoje?')
+
+      const thanks = await (await ask(call, 'Hvala.')).done
+      expect(thanks.text).toBe('Nema na čemu.')
+      anthropic.script(answer('Stol košta sto eura.'))
+      await (
+        await ask(call, 'Dobar dan, koliko košta stol?')
+      ).done
+      expect(anthropic.calls).toHaveLength(2)
+
+      const bye = await (await ask(call, 'Hvala, doviđenja.')).done
+      expect(bye.text).toBe('Doviđenja, ugodan dan!')
+      await call.session.settle()
+      expect(ended).toEqual(['caller_goodbye'])
+      expect(anthropic.calls).toHaveLength(2)
+      expect(logs.filter((l) => l.line.includes('"courtesy reply"'))).toHaveLength(3)
+      // Stored like any turn: the caller's words and the fixed line, no model on the row.
+      const rows = rowsOf(call.identity.sessionId)
+      expect(rows.filter((r) => r.role === 'assistant' && r.model === null)).toHaveLength(3)
     },
   )
 
@@ -497,10 +532,10 @@ describe('a spoken turn', () => {
   scenario('VOICE-25b a warm-up that never finishes holds the first question at most the limit', async () => {
     const stuck = await openCall({ warmWaitMs: 100 })
     stuck.session.warming(new Promise<void>(() => {}))
-    anthropic.script(answer('Dobar dan.'))
+    anthropic.script(answer('Postoje tri stola.'))
     const t0 = Date.now()
     await (
-      await ask(stuck, 'Dobar dan.')
+      await ask(stuck, 'Koji stolovi postoje?')
     ).done
     expect(Date.now() - t0).toBeLessThan(2_000)
     expect(anthropic.calls).toHaveLength(1)
@@ -601,7 +636,7 @@ describe('a spoken turn', () => {
     async () => {
       anthropic.script({ hangUntilAborted: true })
       const call = await openCall({ settings: { requestTimeoutMs: 40 } })
-      const out = await (await ask(call, 'Halo?')).done
+      const out = await (await ask(call, 'Koliko košta stol?')).done
       expect(out.text).toBe(MESSAGES_HR.request_timeout)
       await call.session.settle()
       expect(kinds(call.sessionId)).toEqual(['user'])

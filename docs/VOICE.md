@@ -147,7 +147,12 @@ now()` and `last_seen_at` within 3 minutes; null is a refused job. The token is 
    played out (`HangUp` waits for the `SpeechHandle` LiveKit created for the turn, or 10 s of
    grace; an earlier answer still draining does not pre-empt it, `V-2`); a question that still
    arrives hears nothing (`VOICE-11`). The caller's own goodbye ends the call the same way
-   (`caller_goodbye`, `VOICE-24`): when the whole utterance is one of a closed set
+   (`caller_goodbye`, `VOICE-24`). Greetings, plain thanks and goodbyes are answered at once
+   with a fixed line and no model call (`courtesyReply` in `answers.ts`, `VOICE-29`): a mirrored
+   greeting + "Kako vam mogu pomoći?" ("Halo" → "Tu sam, izvolite."), "Nema na čemu.",
+   "Doviđenja, ugodan dan!" (then the hang-up); the user row and the fixed line join the call's
+   rows and are saved like any turn (the assistant row has no model), so the model's history
+   sees them; not while a write waits for the caller's answer. The goodbye set: when the whole utterance is one of a closed set
    (`isGoodbye` in `answers.ts`: "doviđenja", "hvala, doviđenja", "to je sve", "laku noć",
    "čujemo se" …; not "bok" alone, which is as often a greeting, nor plain "hvala"), the model
    answers it, then the call hangs up once that answer has played.

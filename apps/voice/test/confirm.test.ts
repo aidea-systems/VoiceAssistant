@@ -131,6 +131,22 @@ describe('the caller’s answer', () => {
   })
 })
 
+describe('a fixed reply while a write waits', () => {
+  scenario(
+    'VOICE-29b a "hvala" while a write waits for the answer goes to the model, the write stays pending',
+    async () => {
+      const call = await openCall(PACK)
+      await previewed(call)
+      const before = anthropic.calls.length
+      anthropic.script(answer('Želite li da zapišem?'))
+      const out = await (await ask(call, 'Hvala.')).done
+      expect(out.text).toBe('Želite li da zapišem?')
+      expect(anthropic.calls).toHaveLength(before + 1)
+      expect(call.session.confirmations.rows[0]!.outcome).toBe('pending')
+    },
+  )
+})
+
 describe('reply_mail on a call', () => {
   const graph = new FakeGraph()
   const mailCall = async () => {
