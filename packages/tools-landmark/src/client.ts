@@ -165,15 +165,18 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
   /** A JSON answer, at most `MAX_RESPONSE_BYTES`; a refusal's envelope becomes a `LandmarkError`. */
   async function readJson(res: Response, fields: LogFields, t0: number): Promise<unknown> {
     const declared = Number(res.headers.get('content-length') ?? 0)
-    const text = declared > MAX_RESPONSE_BYTES ? null : await res.text()
-    if (text === null || text.length > MAX_RESPONSE_BYTES) {
+    // Bounded while reading, not only by the header (a chunked answer has none).
+    const body = declared > MAX_RESPONSE_BYTES ? null : await readCapped(res, MAX_RESPONSE_BYTES)
+    if (body === null) {
+      if (declared <= MAX_RESPONSE_BYTES) await res.body?.cancel().catch(() => {})
       log('warn', LANDMARK_TAG, 'response too large', {
         ...fields,
         status: res.status,
-        bytes: text?.length ?? declared,
+        ...(declared > 0 ? { bytes: declared } : {}),
       })
       throw new LandmarkError('bad_response', res.status, null)
     }
+    const text = new TextDecoder().decode(body)
     let json: unknown = null
     try {
       json = text ? JSON.parse(text) : null
@@ -215,9 +218,14 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
     },
     async describeDocument(id, sub, signal, ids = {}) {
       if (!UUID.test(id)) throw new LandmarkError('bad_request', 0, 'document id')
-      const json = await post(`documents/${id}`, {}, sub, signal, { route: 'document', document_id: id, ...ids })
+      const json = await post(`documents/${id}`, {}, sub, signal, {
+        route: 'document',
+        document_id: id,
+        ...ids,
+      })
       const parsed = documentInfoSchema.safeParse((json as { data?: unknown } | null)?.data)
-      if (!parsed.success || parsed.data.document_id !== id) throw new LandmarkError('bad_response', 200, null)
+      if (!parsed.success || parsed.data.document_id !== id)
+        throw new LandmarkError('bad_response', 200, null)
       return parsed.data
     },
     async documentContent(id, maxBytes, sub, signal, ids = {}) {
@@ -231,7 +239,11 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
       }
       const declared = res.headers.get('content-length')
       const tooLarge = () => {
-        log('warn', LANDMARK_TAG, 'document too large', { ...fields, status: res.status, max_bytes: maxBytes })
+        log('warn', LANDMARK_TAG, 'document too large', {
+          ...fields,
+          status: res.status,
+          max_bytes: maxBytes,
+        })
         return new LandmarkError('too_large', res.status, null)
       }
       if (declared !== null && Number(declared) > maxBytes) {
@@ -242,7 +254,12 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
       if (bytes === null) throw tooLarge()
       const name = fileNameOf(res.headers.get('content-disposition'))
       if (name === null) throw new LandmarkError('bad_response', res.status, null)
-      log('info', LANDMARK_TAG, 'request', { ...fields, status: res.status, bytes: bytes.byteLength, ms: ms(t0) })
+      log('info', LANDMARK_TAG, 'request', {
+        ...fields,
+        status: res.status,
+        bytes: bytes.byteLength,
+        ms: ms(t0),
+      })
       return { name, mime: mimeOf(res.headers.get('content-type')), bytes }
     },
     async call(name, input, channel, sub, signal, ids = {}) {

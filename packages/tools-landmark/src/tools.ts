@@ -6,7 +6,8 @@
 import { defineTool, type ToolDefinition } from '@va/core'
 import { z } from 'zod'
 
-import type { LandmarkAccess } from './access.js'
+import { isLandmarkFailure, type LandmarkAccess } from './access.js'
+import { listedIds, type ListedDocuments } from './listed.js'
 import type { ManifestTool } from './manifest.js'
 import { DESCRIPTION_OVERRIDES, MAX_INPUT_CHARS, type ReviewedTool } from './reviewed.js'
 
@@ -17,7 +18,11 @@ function boundedStrings(value: Input): boolean {
   return Object.values(value).every((v) => typeof v !== 'string' || v.length <= MAX_INPUT_CHARS)
 }
 
-export function landmarkTool(tool: ManifestTool, access: LandmarkAccess): ToolDefinition<Input> {
+export function landmarkTool(
+  tool: ManifestTool,
+  access: LandmarkAccess,
+  listed?: ListedDocuments,
+): ToolDefinition<Input> {
   const input = (z.fromJSONSchema(tool.input_schema) as unknown as z.ZodType<Input>).refine(boundedStrings, {
     message: `a string field is longer than ${MAX_INPUT_CHARS} characters`,
   }) as unknown as z.ZodType<Input>
@@ -28,7 +33,12 @@ export function landmarkTool(tool: ManifestTool, access: LandmarkAccess): ToolDe
     inputSchema: tool.input_schema,
     requiredRoles: ['admin', 'member'],
     readOnly: true,
-    handler: (parsed, ctx, extras, signal) =>
-      access.call(ctx, tool.name, parsed, extras.channel, signal, extras.requestId),
+    async handler(parsed, ctx, extras, signal) {
+      const result = await access.call(ctx, tool.name, parsed, extras.channel, signal, extras.requestId)
+      // The documents the user was shown may be attached to a mail; no other (`listed.ts`).
+      if (listed && tool.name === 'list_documents_for_entity' && !isLandmarkFailure(result))
+        listed.record(ctx.userId, listedIds(result))
+      return result
+    },
   })
 }

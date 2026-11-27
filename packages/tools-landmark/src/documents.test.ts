@@ -19,56 +19,19 @@ import {
   USERS,
 } from '@va/core/test'
 
-import { FakeLandmark } from '../test/fake-landmark.js'
+import { DOCUMENT_TOOL, FakeLandmark, MANIFEST_WITH_DOCUMENTS } from '../test/fake-landmark.js'
 import {
+  createLandmark,
   createLandmarkDocuments,
   createLandmarkPack,
+  LISTED_TTL_MS,
+  ListedDocuments,
   DESCRIPTION_OVERRIDES,
   fileNameOf,
-  type LandmarkManifest,
-  MANIFEST,
-  manifestVersion,
   mimeOf,
-  parseManifest,
 } from './index.js'
 
-/** Landmark's `list_documents_for_entity` as its manifest will carry it (tools.ts there). */
-const DOCUMENT_TOOL = {
-  name: 'list_documents_for_entity',
-  description:
-    'List files attached to a single entity in the platform — typically a contract, project, subcontractor, ' +
-    'or apartment unit. Returns metadata only: id, file_name, mime_type, file_size, category, uploaded_at. ' +
-    'To deliver one of the listed files to the user, pass its `id` to `get_document_download_link`.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      entity_type: {
-        type: 'string',
-        enum: ['project', 'phase', 'subcontractor', 'contract', 'unit', 'customer', 'credit', 'company'],
-        description: 'The kind of entity whose attached documents to list. "unit" maps to apartments.',
-      },
-      entity_id: { type: 'string', format: 'uuid', description: 'UUID of the entity.' },
-      limit: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 100,
-        default: 20,
-        description: 'Maximum number of document rows to return.',
-      },
-    },
-    required: ['entity_type', 'entity_id'],
-    additionalProperties: false,
-  },
-  roles: ['Director', 'Accounting', 'Sales', 'Supervision', 'Investment'],
-  voice: true,
-}
-
-function withDocuments(): LandmarkManifest {
-  const body = { tools: [...MANIFEST.tools, DOCUMENT_TOOL], domain_rules_hr: MANIFEST.domain_rules_hr }
-  return parseManifest({ version: manifestVersion(body), ...body })
-}
-
-const manifest = withDocuments()
+const manifest = MANIFEST_WITH_DOCUMENTS
 const landmark = new FakeLandmark(manifest)
 let now = new Date('2026-11-27T10:00:00Z')
 const LIST: readonly string[] = manifest.tools.map((t) => t.name)
@@ -81,13 +44,18 @@ const pack = () =>
     clock: () => now,
     manifest,
   })
+/** The documents the tests' users were shown: L20–L22 start from a listing; L23 makes its own. */
+let listed: ListedDocuments
 const documents = (fetch: typeof globalThis.fetch = landmark.fetch) =>
-  createLandmarkDocuments({ url: landmark.url, secret: landmark.secret, fetch, clock: () => now })
+  createLandmarkDocuments({ url: landmark.url, secret: landmark.secret, fetch, clock: () => now, listed })
 
 const CONTRACT = '22222222-2222-4222-8222-222222222222'
 const DOC = '33333333-3333-4333-8333-333333333333'
 const HIDDEN = '44444444-4444-4444-8444-444444444444'
 const UNKNOWN_SIZE = '55555555-5555-4555-8555-555555555555'
+const MISSING_ID = '66666666-6666-4666-8666-666666666666'
+/** The i-th file of the contract's listing (the first is DOC). */
+const listedId = (i: number) => `00000000-0000-4000-8000-00000000000${i}`
 const NAME = 'Ugovor Kopko d.o.o. (Prečko).pdf'
 const PDF = new TextEncoder().encode('%PDF-1.7 ugovor')
 const signal = () => new AbortController().signal
@@ -117,6 +85,9 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  listed = new ListedDocuments(() => now)
+  for (const user of [USERS.member.id, USERS.admin.id])
+    listed.record(user, [DOC, HIDDEN, UNKNOWN_SIZE, MISSING_ID, 'not-a-uuid'])
   landmark.reset()
   now = new Date('2026-11-27T10:00:00Z')
   landmark.clock = () => now
@@ -124,7 +95,7 @@ beforeEach(() => {
   landmark.mapUser(USERS.admin.email, { role: 'Sales' })
   landmark.answer('list_documents_for_entity', () => ({
     documents: Array.from({ length: 7 }, (_, i) => ({
-      id: i === 0 ? DOC : `d${i}`,
+      id: i === 0 ? DOC : listedId(i),
       file_name: i === 0 ? NAME : `Prilog ${i}.pdf`,
       mime_type: 'application/pdf',
       file_size: 120_000,
@@ -217,7 +188,7 @@ describe('Cognilion documents', () => {
     // Landmark's rule: Sales does not see the Director's contract, nor the payroll sheet.
     expect(await docs.describe(admin, DOC, signal())).toEqual({ error: 'not_found' })
     expect(await docs.describe(member, HIDDEN, signal())).toEqual({ error: 'not_found' })
-    expect(await docs.describe(member, '66666666-6666-4666-8666-666666666666', signal())).toEqual({
+    expect(await docs.describe(member, MISSING_ID, signal())).toEqual({
       error: 'not_found',
     })
     expect(await docs.describe(member, 'not-a-uuid', signal())).toEqual({ error: 'not_found' })
@@ -313,5 +284,72 @@ describe('Cognilion documents', () => {
     expect(mimeOf('text/html\r\nX: y')).toBe('application/octet-stream')
     expect(mimeOf('pdf')).toBe('application/octet-stream')
     expect(mimeOf(null)).toBe('application/octet-stream')
+  })
+  scenario(
+    "L23 only a document the user was shown may be described or read: an id from an email or another user's listing is not_found with no request; on the phone only the five heard; forgotten after 30 minutes",
+    async () => {
+      const lm = createLandmark({
+        url: landmark.url,
+        secret: landmark.secret,
+        fetch: landmark.fetch,
+        clock: () => now,
+        manifest,
+      })
+      const member = await authAs('member')
+      const admin = await authAs('admin')
+      const before = landmark.calls.length
+      expect(await lm.documents.describe(member, DOC, signal())).toEqual({ error: 'not_found' })
+      expect(await lm.documents.fetch(member, DOC, 1000, signal())).toEqual({ error: 'not_found' })
+      expect(landmark.calls.length, 'an unlisted id never reaches Landmark').toBe(before)
+
+      anthropic.script(
+        callTools(toolUse('list_documents_for_entity', { entity_type: 'contract', entity_id: CONTRACT })),
+        answer('Pet datoteka.'),
+      )
+      await runChat(member, 'Koji su dokumenti ugovora?', {
+        channel: 'phone',
+        packs: [lm.pack],
+        allowlist: ALLOWLIST,
+        allowed: true,
+      })
+      expect(await lm.documents.describe(member, DOC, signal())).toMatchObject({ name: NAME })
+      // The sixth and seventh were cut by the voice clamp: never heard, never attachable.
+      for (const i of [4, 6])
+        landmark.addDocument(listedId(i), {
+          file_name: `Prilog ${i}.pdf`,
+          mime_type: null,
+          bytes: PDF,
+          visibleTo: () => true,
+        })
+      expect(await lm.documents.describe(member, listedId(4), signal())).toMatchObject({
+        name: 'Prilog 4.pdf',
+      })
+      expect(await lm.documents.describe(member, listedId(6), signal())).toEqual({ error: 'not_found' })
+      // Another user's listing opens nothing for this one, and the other way round.
+      expect(await lm.documents.describe(admin, DOC, signal())).toEqual({ error: 'not_found' })
+      now = new Date(now.getTime() + LISTED_TTL_MS + 1)
+      const later = landmark.calls.length
+      expect(await lm.documents.describe(member, DOC, signal())).toEqual({ error: 'not_found' })
+      expect(landmark.calls.length).toBe(later)
+    },
+  )
+
+  it('L24 a JSON answer without Content-Length is bounded while it is read: more than 256 KB is bad_response, the rest never read', async () => {
+    const member = await authAs('member')
+    let pulled = 0
+    const chunked: typeof fetch = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulled++
+            if (pulled > 1000) controller.close()
+            else controller.enqueue(new Uint8Array(64 * 1024).fill(32))
+          },
+        }),
+        { status: 404, headers: { 'content-type': 'application/json' } },
+      )
+    expect(await documents(chunked).describe(member, DOC, signal())).toEqual({ error: 'unavailable' })
+    expect(pulled).toBeLessThan(10)
+    expect(landmarkLogs().some((l) => l.line.includes('response too large'))).toBe(true)
   })
 })

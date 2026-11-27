@@ -1,11 +1,13 @@
 // Cognilion documents for another pack (Part 15, decision 0020): the mail pack attaches one to an
 // email. The app hands this object to the mail pack, as it hands it the mail token provider, so
-// no pack imports another. Who may see a document is Landmark's rule (`/documents/<id>` answers
-// `not_found` otherwise); this side only signs for the caller, bounds the bytes and folds every
+// no pack imports another. Only a document `list_documents_for_entity` showed the user may be
+// described or read (`listed.ts`); who may see it is Landmark's rule (`/documents/<id>` answers
+// `not_found` otherwise); this side signs for the caller, bounds the bytes and folds every
 // failure into three reasons. Nothing here logs or keeps a file name or a byte of content.
 import type { AuthContext } from '@va/core'
 
-import { createLandmarkClient, LandmarkError } from './client.js'
+import { createLandmarkClient, LandmarkError, mimeOf } from './client.js'
+import type { ListedDocuments } from './listed.js'
 import { LandmarkAccessError, subjectFor } from './subject.js'
 
 /** Why a document could not be described or read: Landmark has none the caller may see (or the
@@ -47,6 +49,8 @@ export interface LandmarkDocumentsConfig {
   secret: string
   fetch?: typeof fetch
   clock?: () => Date
+  /** The documents each user was shown; any other id is `not_found` without a request. */
+  listed: ListedDocuments
 }
 
 export function createLandmarkDocuments(config: LandmarkDocumentsConfig): LandmarkDocuments {
@@ -63,6 +67,7 @@ export function createLandmarkDocuments(config: LandmarkDocumentsConfig): Landma
   })
   return {
     async describe(ctx, documentId, signal, requestId) {
+      if (!config.listed.has(ctx.userId, documentId)) return { error: 'not_found' }
       try {
         const info = await client.describeDocument(
           documentId,
@@ -72,7 +77,7 @@ export function createLandmarkDocuments(config: LandmarkDocumentsConfig): Landma
         )
         return {
           name: info.file_name,
-          mime: info.mime_type ?? 'application/octet-stream',
+          mime: mimeOf(info.mime_type),
           size: info.file_size,
         }
       } catch (e) {
@@ -81,6 +86,7 @@ export function createLandmarkDocuments(config: LandmarkDocumentsConfig): Landma
       }
     },
     async fetch(ctx, documentId, maxBytes, signal, requestId) {
+      if (!config.listed.has(ctx.userId, documentId)) return { error: 'not_found' }
       try {
         return await client.documentContent(
           documentId,

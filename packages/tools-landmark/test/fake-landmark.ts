@@ -8,7 +8,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 import { clampForVoice } from '../src/clamp.js'
-import { type LandmarkManifest, MANIFEST } from '../src/manifest.js'
+import { type LandmarkManifest, MANIFEST, manifestVersion, parseManifest } from '../src/manifest.js'
 
 export interface FakeLandmarkUser {
   role: string
@@ -50,6 +50,45 @@ export interface FakeDocument {
   /** Landmark's rule for this document and the caller (a role, an assigned project). */
   visibleTo: (user: FakeLandmarkUser) => boolean
 }
+
+/** Landmark's `list_documents_for_entity` as its manifest will carry it (tools.ts there). */
+export const DOCUMENT_TOOL = {
+  name: 'list_documents_for_entity',
+  description:
+    'List files attached to a single entity in the platform — typically a contract, project, subcontractor, ' +
+    'or apartment unit. Returns metadata only: id, file_name, mime_type, file_size, category, uploaded_at. ' +
+    'To deliver one of the listed files to the user, pass its `id` to `get_document_download_link`.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      entity_type: {
+        type: 'string',
+        enum: ['project', 'phase', 'subcontractor', 'contract', 'unit', 'customer', 'credit', 'company'],
+        description: 'The kind of entity whose attached documents to list. "unit" maps to apartments.',
+      },
+      entity_id: { type: 'string', format: 'uuid', description: 'UUID of the entity.' },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 20,
+        description: 'Maximum number of document rows to return.',
+      },
+    },
+    required: ['entity_type', 'entity_id'],
+    additionalProperties: false,
+  },
+  roles: ['Director', 'Accounting', 'Sales', 'Supervision', 'Investment'],
+  voice: true,
+}
+
+/** The committed snapshot plus `list_documents_for_entity`: what the next pull should bring. */
+function withDocuments(): LandmarkManifest {
+  const body = { tools: [...MANIFEST.tools, DOCUMENT_TOOL], domain_rules_hr: MANIFEST.domain_rules_hr }
+  return parseManifest({ version: manifestVersion(body), ...body })
+}
+
+export const MANIFEST_WITH_DOCUMENTS: LandmarkManifest = withDocuments()
 
 export const FAKE_LANDMARK_URL = 'https://landmark.test/functions/v1/assistant-api'
 export const FAKE_LANDMARK_SECRET = 'fake-landmark-secret-for-tests'
@@ -221,7 +260,12 @@ export class FakeLandmark {
       const size = d.file_size === undefined ? d.bytes.byteLength : d.file_size
       if (route === 'document')
         return json(200, {
-          data: { document_id: call.documentId, file_name: d.file_name, mime_type: d.mime_type, file_size: size },
+          data: {
+            document_id: call.documentId,
+            file_name: d.file_name,
+            mime_type: d.mime_type,
+            file_size: size,
+          },
         })
       const max = (body as { max_bytes: number }).max_bytes
       if (size !== null && size > max) return fail(413, 'too_large', 'file is larger than max_bytes')

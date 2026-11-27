@@ -22,7 +22,8 @@ packages/tools-landmark/            @va/tools-landmark   tools-* → core (defin
 ├── src/projects-context.ts         ProjectsContext: the caller's projects as the per-user block, four probes once per call, 5 min
 ├── src/clamp.ts                    clampForVoice, clipText: the voice clamps applied here too; refusal text bounded
 ├── src/client.ts                   createLandmarkClient: POST /me, /manifest, /tools/<name>, /documents/<id>[/content]; LandmarkError
-├── src/documents.ts                createLandmarkDocuments: describe / fetch a document as the caller, for the mail pack (Part 15)
+├── src/documents.ts                createLandmarkDocuments: describe / fetch a listed document as the caller, for the mail pack (Part 15)
+├── src/listed.ts                   ListedDocuments: which document ids each user was shown, 30 min
 ├── src/access.ts                   LandmarkAccess: call (every outcome as what the model reads), allowedTools (/me, 60 s)
 ├── src/tools.ts                    one defineTool per manifest tool: zod from the JSON Schema, the schema advertised as is
 ├── src/rules.hr.ts                 LANDMARK_RULES_HR, the pack's own prompt rules (after Landmark's)
@@ -152,8 +153,13 @@ not have). It reaches the model, and the worker's allowlist, only after the mani
 from the Landmark deploy that exposes it (`docs/requests/landmark-documents-request.md`); until
 then the snapshot has the twelve and `L14` pins the difference.
 
-`createLandmarkDocuments({ url, secret, fetch?, clock? })` is not a tool: the apps hand it to the
-mail pack (`MailPackConfig.documents`), which never imports this package.
+`createLandmark(config)` returns `{ pack, documents }`, sharing a `ListedDocuments`: the ids
+`list_documents_for_entity` returned to each user (as the model got them, so on voice the five
+heard), for 30 minutes, at most 500 per user. `documents` (`createLandmarkDocuments`) answers
+`not_found` without a request for any other id, so a document id written into an email opens
+nothing (the security review of 2026-11-27). It is not a tool: the apps hand it to the mail
+pack (`MailPackConfig.documents`), which never imports this package. JSON answers are bounded
+while read (`L24`), not only by `Content-Length`.
 
 | Method                                         | Route                                          | Answer                                 |
 | ---------------------------------------------- | ---------------------------------------------- | -------------------------------------- |
@@ -212,7 +218,7 @@ three stores, restart; between the first and the last the Landmark tools answer
 ## Scripts and tests
 
 ```sh
-pnpm --filter @va/tools-landmark test             # L01–L22 against the fake
+pnpm --filter @va/tools-landmark test             # L01–L24 against the fake
 pnpm --filter @va/tools-landmark manifest:pull    # re-pull the snapshot (dev project), then review the diff
 ```
 
@@ -221,9 +227,9 @@ with a verified assertion and the validated input, the phone's voice clamps, the
 refusal, the unmapped user, Landmark's role gate at advertisement and dispatch, the `/me`
 cache, every failure mode, who may be signed for, drift, the assertion itself, a `/me` of
 another shape, the bounds on what comes back, the reviewed list and schema shape, a future
-`iat`. `L19`–`L22` (`src/documents.test.ts`): the document list through the loop with our
+`iat`. `L19`–`L24` (`src/documents.test.ts`): the document list through the loop with our
 description and the voice clamp, describe and fetch under Landmark's rule, the size bounds on
-both sides, the header parsing. `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
+both sides, the header parsing, only listed ids (`L23`), JSON bounded while read (`L24`). `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
 verifies the assertion as the function does, maps users, applies the manifest's role gate and
 schema, clamps on voice, serves documents under a visibility predicate (counting Storage reads),
 and records every request.

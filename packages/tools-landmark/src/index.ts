@@ -7,6 +7,8 @@
 import type { ToolPack } from '@va/core'
 
 import { LandmarkAccess } from './access.js'
+import { createLandmarkDocuments, type LandmarkDocuments } from './documents.js'
+import { ListedDocuments } from './listed.js'
 import { type LandmarkManifest, MANIFEST } from './manifest.js'
 import { ProjectsContext } from './projects-context.js'
 import { REVIEWED_VOICE_TOOLS } from './reviewed.js'
@@ -41,7 +43,7 @@ export function landmarkDomainRules(manifest: LandmarkManifest = MANIFEST): stri
 }
 
 /** One pack per process: its caches (`/me` for 60 s, the caller's projects for five minutes) live with it. */
-export function createLandmarkPack(config: LandmarkPackConfig): ToolPack {
+export function createLandmarkPack(config: LandmarkPackConfig, listed?: ListedDocuments): ToolPack {
   const manifest = config.manifest ?? MANIFEST
   const access = new LandmarkAccess({
     url: config.url,
@@ -53,7 +55,7 @@ export function createLandmarkPack(config: LandmarkPackConfig): ToolPack {
   const projects = new ProjectsContext(access, config.clock ?? (() => new Date()), manifest)
   return {
     name: LANDMARK_PACK_NAME,
-    tools: manifest.tools.map((t) => landmarkTool(t, access)) as ToolPack['tools'],
+    tools: manifest.tools.map((t) => landmarkTool(t, access, listed)) as ToolPack['tools'],
     domainRules: landmarkDomainRules(manifest),
     allowedTools: (ctx, channel, signal) => access.allowedTools(ctx, channel, signal),
     userContext: (ctx, channel, signal) => projects.block(ctx, channel, signal),
@@ -69,6 +71,17 @@ export {
   ME_TIMEOUT_MS,
   toLandmarkChannel,
 } from './access.js'
+/** The pack and the document source for the mail pack, sharing which documents each user was
+ * shown (`ListedDocuments`): what the apps register (Part 15). */
+export function createLandmark(config: LandmarkPackConfig): { pack: ToolPack; documents: LandmarkDocuments } {
+  const listed = new ListedDocuments(config.clock)
+  return {
+    pack: createLandmarkPack(config, listed),
+    documents: createLandmarkDocuments({ ...config, listed }),
+  }
+}
+
+export { LISTED_MAX_PER_USER, LISTED_TTL_MS, ListedDocuments, listedIds } from './listed.js'
 export {
   createLandmarkDocuments,
   type DocumentDescription,
