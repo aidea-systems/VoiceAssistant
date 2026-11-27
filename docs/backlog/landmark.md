@@ -1,10 +1,32 @@
 # Backlog — landmark
 
-Ids: LM-5 (next free)
+Ids: LM-7 (next free)
 
 The company pack (`packages/tools-landmark`) and what it needs from Landmark's side.
 
 ## Open
+
+### LM-5 · Medium · Landmark's document rule is as wide as the parent's RLS
+
+- **Check:** Open, Landmark's to decide (found planning Part 15, 2026-11-27)
+- **Where:** Landmark `supabase/functions/_shared/tool-handlers.ts` (`probeParentEntity`, the
+  download handler); `documents` and `document_associations` are `USING (true)` and both buckets
+  readable by every signed-in user (its migrations of 2026-05-27), so application code is the
+  only gate
+- **What happens:** anyone who can see a document's parent (a contract, a project, a
+  subcontractor) through RLS can attach every file of it; where the parent is visible to every
+  role, so are its files, whatever they hold (a signed contract's prices)
+- **Fix direction:** Landmark's call: a per-category or per-role rule for documents, applied in
+  the one shared access function the request asks it to extract; the assistant changes nothing
+
+### LM-6 · Low · OQ: `list_documents_for_entity` limits before it sorts
+
+- **Check:** Open, Landmark's to fix (found planning Part 15, 2026-11-27)
+- **Where:** Landmark `handleListDocumentsForEntity`: `.limit(limit)` on the association query,
+  then the newest-first sort in code
+- **What happens:** an entity with more files than `limit` (20 by default) returns some 20, then
+  sorted; the newest may be missing, and on voice the five read out are the newest of those
+- **Fix direction:** order by `uploaded_at` in the query (an embedded order) before the limit
 
 ## Resolved
 

@@ -45,4 +45,4 @@ Alternatives: drafts the user sends from Outlook (one more step for every mail);
   (`VOICE-22`).
 - The tool's description is chat-only, so the voice prompt and its cache key do not move.
 
-Date: 2026-11-25.
+Date: 2026-11-25. Attachments: decision 0020 (2026-11-27).

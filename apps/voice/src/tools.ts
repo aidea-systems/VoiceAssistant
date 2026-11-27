@@ -7,7 +7,7 @@
 import { type ChannelAllowlist, ToolRegistry } from '@va/core'
 import type { TokenStore } from '@va/integrations'
 import { demoPack } from '@va/tools-demo'
-import { createLandmarkPack, type LandmarkPackConfig } from '@va/tools-landmark'
+import { createLandmark, type LandmarkPackConfig } from '@va/tools-landmark'
 import { createMailPack } from '@va/tools-mail'
 
 import { mailTokenProvider } from './mail.js'
@@ -23,7 +23,9 @@ import { mailTokenProvider } from './mail.js'
 // The two mail writes (Part 13c), each `confirmation: 'required'`: nothing is sent or flagged
 // until the caller's "da", decided in code from a closed set (answers.ts); the preview is read
 // out verbatim before the model asks (VOICE-19); a reply goes only to the message's sender, never
-// a Reply-To, and no address is spoken.
+// a Reply-To, and no address is spoken. A reply may carry one Cognilion document (Part 15,
+// decision 0020) when Landmark is registered: the preview read out names the file and its size,
+// and the bytes go to Graph only after the "da".
 const SPOKEN_TOOLS = [
   'search_items',
   'get_item',
@@ -89,10 +91,14 @@ export function createRegistry(
   landmark: LandmarkPackConfig | null = null,
   graphFetch?: typeof fetch,
 ): ToolRegistry {
+  // The pack and the mail pack's document source share which documents each user was shown.
+  const lm = landmark ? createLandmark(landmark) : null
   const mail = createMailPack({
     token: mailTokenProvider(tokens),
     ...(graphFetch ? { fetch: graphFetch } : {}),
+    // Attachments from Cognilion (Part 15): the documents come from Landmark, as the caller.
+    ...(lm ? { documents: lm.documents } : {}),
   })
-  const packs = [demoPack, mail, ...(landmark ? [createLandmarkPack(landmark)] : [])]
+  const packs = [demoPack, mail, ...(lm ? [lm.pack] : [])]
   return new ToolRegistry(packs, voiceAllowlist(landmark !== null))
 }

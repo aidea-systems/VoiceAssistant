@@ -47,7 +47,7 @@ item says so in its description.
       `not_permitted_for_user`), and answers an `is_error` result (invariants 4 and 5). Landmark's
       twelve join the spoken allowlist only where the pack is registered (`voiceAllowlist(true)`).
       Tests: `T02`, `T05`, `T08`, `T11`, `E08`–`E10`, `E39`, `W06`, `W20`, `W45`–`W47`, `R01`,
-      `LA01`–`LA03`, `L05`–`L07`, `E40`–`E51`, `S15`, `S16`, `W35`–`W43`, `Z19`–`Z27`, `B30`.
+      `LA01`–`LA04`, `L05`–`L07`, `L19`–`L24`, `E40`–`E51`, `S15`, `S16`, `W35`–`W43`, `Z19`–`Z27`, `Z38`–`Z45`, `B30`.
 - [ ] **The JWT never leaves our side; LiveKit learns the user id and nothing else.** LiveKit
       job metadata carries only the opaque call token and the session id; the browser gets only
       a LiveKit room token whose participant identity is `users.id` with no name (so no email);
@@ -124,7 +124,15 @@ outcome is unknown is never retried (`write_outcome_unknown`). New mail (`send_m
 own sender), checked before the confirmation and again before sending; the preview lists every
 recipient before anything the model wrote, and its description forbids sending because a
 message asks for it or passing other mail on. At most 20 confirmed mail writes per user and day, replies and new mail
-together (`API-16`).
+together (`API-16`). An attachment (decision 0020) is one Cognilion document, read as the
+caller through Landmark's `assistant-api` under the rule its own download link applies; the
+preview names the file and its size (read out on a call) and the document id is bound by the
+confirmation's hash; only a document `list_documents_for_entity` showed that user in the last 30 minutes can be named at all (an id from an email opens nothing); the file comes before the model's text in the preview; the bytes are bounded at 3,000,000 on both sides, read again right before the send (a failure sends nothing), never kept or logged, and the file name never logged (it is kept where the subject is).
+Landmark's rule is application code over tables and buckets every signed-in Landmark user can
+read: a document is as visible as its parent entity (`LM-5`), so a file reaches only those
+Landmark already shows it to, and leaves only to the recipients above, after the user's yes.
+An injected mail can ask for one of the listed files; the description and the rules say to
+attach only what the user asked for, but among those the boundary is the confirmation.
 
 **Outlook (Part 13a, decision 0016).** The assistant reaches a mailbox with delegated
 permissions only, as the user who connected it, through a separate Entra app restricted to

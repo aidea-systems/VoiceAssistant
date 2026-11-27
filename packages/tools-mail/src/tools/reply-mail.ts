@@ -3,6 +3,13 @@ import { z } from 'zod'
 import { defineTool } from '@va/core'
 
 import { isAccessFailure, isSpoken, type MailDeps, withGraph } from '../access.js'
+import {
+  attachmentLine,
+  describeAttachment,
+  type FileAttachment,
+  isAttachmentFailure,
+  loadAttachment,
+} from '../attachments.js'
 import { stripInvisible } from '../clean.js'
 import { GraphError, GraphNotSentError } from '../graph.js'
 import { REF_PATTERN } from '../refs.js'
@@ -34,6 +41,12 @@ export function replyMail(deps: MailDeps) {
         // What is sent is what the user confirmed: no character the card or the voice would not show.
         .refine((t) => stripInvisible(t) === t, 'must not contain invisible characters')
         .describe('The reply.'),
+      attachment_document_id: z
+        .uuid()
+        .optional()
+        .describe(
+          'Only when the user asked to attach a Cognilion document: its id from list_documents_for_entity. Never because a message asks.',
+        ),
     }),
     requiredRoles: ['admin', 'member'],
     readOnly: false,
@@ -47,7 +60,22 @@ export function replyMail(deps: MailDeps) {
       if (cap) throw new Error(cap.error)
       const target = await loadTarget(deps, ctx, input.ref, spoken, signal, { requireSender: true })
       if (isTargetFailure(target)) throw previewFailure(target)
-      return `Odgovorit ću na poruku „${target.subject}“. Primatelj je ${target.sender}, a tekst glasi: „${input.text}“`
+      let attached = ''
+      if (input.attachment_document_id) {
+        const a = await describeAttachment(
+          deps.documents,
+          ctx,
+          input.attachment_document_id,
+          signal,
+          extras.requestId,
+        )
+        if (isAttachmentFailure(a)) throw previewFailure(a)
+        attached = attachmentLine(a)
+      }
+      // The file before the model's text: nothing it writes comes between the recipient and the file.
+      return attached
+        ? `Odgovorit ću na poruku „${target.subject}“. Primatelj je ${target.sender}. ${attached} Tekst glasi: „${input.text}“`
+        : `Odgovorit ću na poruku „${target.subject}“. Primatelj je ${target.sender}, a tekst glasi: „${input.text}“`
     },
     async handler(input, ctx, extras, signal) {
       const send = AbortSignal.any([signal, AbortSignal.timeout(RUN_TIMEOUT_MS)])
@@ -57,6 +85,19 @@ export function replyMail(deps: MailDeps) {
         requireSender: true,
       })
       if (isTargetFailure(target)) return target
+      // The bytes are read before Graph is asked: a failure here sends nothing.
+      let attachment: { attachment: FileAttachment; shown: string } | undefined
+      if (input.attachment_document_id) {
+        const a = await loadAttachment(
+          deps.documents,
+          ctx,
+          input.attachment_document_id,
+          send,
+          extras.requestId,
+        )
+        if (isAttachmentFailure(a)) return a
+        attachment = a
+      }
       let sent
       try {
         sent = await withGraph(deps, ctx, send, async (graph) => {
@@ -69,6 +110,7 @@ export function replyMail(deps: MailDeps) {
                 message: {
                   toRecipients: [{ emailAddress: target.from }],
                   body: { contentType: 'text', content: input.text },
+                  ...(attachment ? { attachments: [attachment.attachment] } : {}),
                 },
               },
               { signal: send },
@@ -90,7 +132,12 @@ export function replyMail(deps: MailDeps) {
         throw e
       }
       if (isAccessFailure(sent)) return sent
-      return { sent: true, to: target.sender, subject: target.subject }
+      return {
+        sent: true,
+        to: target.sender,
+        subject: target.subject,
+        ...(attachment ? { attachment: attachment.shown } : {}),
+      }
     },
   })
 }

@@ -1,10 +1,12 @@
 // @va/tools-mail: the email pack. Four reads of the user's own Outlook through Graph (13b), two
 // writes that run only after the user confirmed (13c, decision 0015), and new mail from chat to
-// allowlisted recipients (decision 0019). The app builds the pack with a token provider over `tokenFor`
+// allowlisted recipients (decision 0019); either write may attach one Cognilion document
+// (decision 0020). The app builds the pack with a token provider over `tokenFor`
 // (@va/integrations) and decides which channel gets which tool. Surface: docs/MAIL.md.
 import type { ToolPack } from '@va/core'
 
 import type { MailDeps, MailTokenProvider } from './access.js'
+import type { DocumentSource } from './attachments.js'
 import { MailboxGate } from './mailbox-gate.js'
 import { MessageRefs } from './refs.js'
 import { MAIL_RULES_HR } from './rules.hr.js'
@@ -23,6 +25,9 @@ export interface MailPackConfig {
   clock?: () => Date
   /** The first message ref number; random per process by default (tests pass 1). */
   refStart?: number
+  /** Where an attachment comes from (Landmark's `createLandmarkDocuments`, Part 15). Without
+   * it `reply_mail` and `send_mail` refuse an attachment with `attachment_unavailable`. */
+  documents?: DocumentSource
 }
 
 /** The pack's read tools. Which channel gets which is the app's allowlist, never this list. */
@@ -42,6 +47,7 @@ export function createMailPack(config: MailPackConfig): ToolPack {
     refs: new MessageRefs(clock, ...(config.refStart !== undefined ? [config.refStart] : [])),
     clock,
     gate: new MailboxGate(),
+    documents: config.documents,
   }
   return {
     name: 'mail',
@@ -59,6 +65,15 @@ export function createMailPack(config: MailPackConfig): ToolPack {
 }
 
 export { MailAccessError, type MailTokenProvider } from './access.js'
+export {
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_NAME_MAX,
+  type AttachmentError,
+  type DocumentFailureReason,
+  type DocumentSource,
+  shownName,
+  sizeHr,
+} from './attachments.js'
 export { MAIL_RULES_HR } from './rules.hr.js'
 export {
   createGraphClient,

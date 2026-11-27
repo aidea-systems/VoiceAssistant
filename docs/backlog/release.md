@@ -1,6 +1,6 @@
 # Backlog — release
 
-Ids: REL-19 (next free)
+Ids: REL-20 (next free)
 
 Things written but not live: migrations to apply (dev first, with the check to run after), secrets
 to set, and checks nobody has run. Tick an item when it is done on every environment it names.
@@ -8,6 +8,18 @@ to set, and checks nobody has run. Tick an item when it is done on every environ
 three sets of checks) and says how to paste the results back.
 
 ## Open
+
+- [ ] REL-19 · decision 0020: Cognilion attachments live. Order: (1) David runs
+      `docs/requests/landmark-documents-request.md` in the Landmark repo and deploys
+      `assistant-api` to Landmark **dev** (`nxvbglegqcgxlxvyfuht`) only; (2) here,
+      `pnpm --filter @va/tools-landmark manifest:pull` against dev, review the diff (thirteen tools,
+      `list_documents_for_entity` with `voice: true`), set `L14`'s pin back to equality, add the
+      name to `LANDMARK_SPOKEN_TOOLS` in `apps/voice/src/tools.ts` (`W45`), commit; (3) deploy.
+      Check: in chat "pošalji kolegi ugovor od projekta Prečko za Kopko d.o.o." → the card names
+      the file and its size → Potvrdi → the mail arrives with the PDF; on a call, a reply "može, u
+      privitku je ugovor" → the file name is read out → "da" → sent with the file; a file over
+      3 MB is refused before any card. Then the voice bench (the mail rules grew by one line,
+      `/bench-voice`). No migration, no Entra change, no new secret.
 
 - [ ] REL-18 · decision 0019: the first live `send_mail`, after the deploy, from the PWA with the
       operator's own mailbox. Check: ask the chat to send a short mail to your own address → the

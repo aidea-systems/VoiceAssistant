@@ -5,7 +5,7 @@
 import { type ChannelAllowlist, ToolRegistry } from '@va/core'
 import type { TokenStore } from '@va/integrations'
 import { demoPack } from '@va/tools-demo'
-import { createLandmarkPack, type LandmarkPackConfig } from '@va/tools-landmark'
+import { createLandmark, type LandmarkPackConfig } from '@va/tools-landmark'
 import { createMailPack } from '@va/tools-mail'
 
 import { mailTokenProvider } from './mail.js'
@@ -22,11 +22,15 @@ export function createRegistry(
   landmark: LandmarkPackConfig | null = null,
   test: { graphFetch?: typeof fetch; refStart?: number } = {},
 ): ToolRegistry {
+  // The pack and the mail pack's document source share which documents each user was shown.
+  const lm = landmark ? createLandmark(landmark) : null
   const mail = createMailPack({
     token: mailTokenProvider(tokens),
     ...(test.graphFetch ? { fetch: test.graphFetch } : {}),
     ...(test.refStart !== undefined ? { refStart: test.refStart } : {}),
+    // Attachments from Cognilion (Part 15): the documents come from Landmark, as the caller.
+    ...(lm ? { documents: lm.documents } : {}),
   })
-  const packs = [demoPack, mail, ...(landmark ? [createLandmarkPack(landmark)] : [])]
+  const packs = [demoPack, mail, ...(lm ? [lm.pack] : [])]
   return new ToolRegistry(packs, API_ALLOWLIST)
 }

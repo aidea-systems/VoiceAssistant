@@ -4,6 +4,7 @@
 // "not connected" and "Microsoft unavailable" become error envelopes the model knows how to say.
 import type { AuthContext, Channel } from '@va/core'
 
+import type { DocumentSource } from './attachments.js'
 import type { MailboxGate } from './mailbox-gate.js'
 import type { MessageRefs } from './refs.js'
 import { createGraphClient, type GraphClient, GraphError } from './graph.js'
@@ -37,6 +38,8 @@ export interface MailDeps {
   clock: () => Date
   /** Every Graph request of a user takes one of the mailbox's slots (API-20). */
   gate: MailboxGate
+  /** Cognilion documents for attachments (Part 15); absent where Landmark is not configured. */
+  documents?: DocumentSource | undefined
 }
 
 export type AccessFailure = { error: 'outlook_not_connected' } | { error: 'outlook_unavailable' }

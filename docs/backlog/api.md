@@ -1,10 +1,21 @@
 # Backlog — api
 
-Ids: API-23 (next free)
+Ids: API-24 (next free)
 
 The HTTP API (`apps/api`): auth, SSE, sessions, rate limits, voice session endpoints.
 
 ## Open
+
+### API-23 · Low · Attachments over 3 MB are refused, not sent
+
+- **Check:** By design (decision 0020, 2026-11-27)
+- **Where:** `packages/tools-mail/src/attachments.ts` (`ATTACHMENT_MAX_BYTES` 3,000,000)
+- **What happens:** a Cognilion document larger than 3,000,000 bytes is `attachment_too_large`
+  before any confirmation; the model says it cannot be attached. Graph takes larger files only
+  through an upload session on a draft (`createUploadSession`, chunks, then send)
+- **Fix direction:** for `send_mail`, a draft + upload session + `send`, with the outcome rules
+  of a multi-request write (a draft left behind on failure); Landmark's `max_bytes` ceiling is
+  5 MiB today and would rise with it
 
 ### API-15 · Low · Mail refs live in one process's memory
 
