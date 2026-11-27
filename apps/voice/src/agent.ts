@@ -332,7 +332,13 @@ export default defineAgent<UserData>({
     const agent = new AssistantAgent(call, callDeps.settings.model)
     if (phone) {
       // The pipeline is up and the gate has said its last line: the engine takes over the
-      // line; the gate's "Izvolite" was the greeting.
+      // line; the gate's "Izvolite" was the greeting. Every gate line has played (each `say`
+      // is awaited), but a speech task the gate left open (seen live 2026-11-27: one created
+      // during the PIN prompt that never finished) makes LiveKit's handover drain wait for it
+      // forever: the assistant never starts and every word is dropped ("speech scheduling is
+      // paused"). A forced interrupt cancels whatever the gate still holds, inaudibly, so the
+      // drain has nothing to wait for (VOICE-30).
+      void session.interrupt({ force: true })
       session.updateAgent(agent)
       log('info', LOG_TAG, 'connected', ids)
       return

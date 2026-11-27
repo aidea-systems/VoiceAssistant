@@ -517,7 +517,7 @@ caller ──PSTN──▶ Twilio trunk ──SIP──▶ LiveKit SIP (EU) ─�
    job accepted (phoneJobOf) ─▶ session.start(GateAgent) ─▶ connect ─▶ waitForParticipant (the SIP participant)
    ─▶ phone/admit: sip.phoneNumber → phoneGate (resolveCaller; the PIN over DtmfReceived) → startPhoneCall
    ─▶ CallIdentity.resolve(the worker's own token) ─▶ the in-app path from here: warm, CallSession,
-      session.updateAgent(AssistantAgent), turns, deferred rows, endCall (+ the session revoked), deleteRoom
+      session.interrupt({ force: true }) (VOICE-30) + session.updateAgent(AssistantAgent), turns, deferred rows, endCall (+ the session revoked), deleteRoom
 ```
 
 | Module                | What it does                                                                                                                                                                                                                                                                                                    |
