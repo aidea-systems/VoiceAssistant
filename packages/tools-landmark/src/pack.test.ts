@@ -542,7 +542,9 @@ describe('@va/tools-landmark', () => {
         }),
       ),
     ).toThrow(/rows\.type/)
-    expect(REVIEWED_TOOLS).toEqual(LANDMARK_TOOLS)
+    // The reviewed list leads the snapshot by list_documents_for_entity (Part 15) until the
+    // manifest is pulled from Landmark's deploy; then the two are equal again.
+    expect([...REVIEWED_TOOLS]).toEqual([...LANDMARK_TOOLS, 'list_documents_for_entity'])
     expect(schemaProblem(tool.input_schema)).toBeNull()
   })
 

@@ -1,7 +1,9 @@
 // A stand-in for Landmark's `assistant-api` over `fetch`, like the Graph and Anthropic fakes: it
 // verifies the assertion as the function does (HS256, iss, aud, life, jti replay, sub shape),
 // maps the subject to a configured Landmark user, applies the manifest's role gate and the
-// input schema, runs the answers a test registers, clamps on voice, and records every request.
+// input schema, runs the answers a test registers, clamps on voice, serves the documents a test
+// adds under a visibility predicate (Landmark's rule, `/documents/<id>[/content]`), and records
+// every request.
 // It fakes the service, not a client library. Any other host is an error, never the network.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
@@ -16,8 +18,12 @@ export interface FakeLandmarkUser {
 export type LandmarkFault = { status: number; code: string; message?: string } | { hang: true }
 
 export interface LandmarkCall {
-  route: 'me' | 'manifest' | 'tool' | 'other'
+  route: 'me' | 'manifest' | 'tool' | 'document' | 'document_content' | 'other'
   tool: string | null
+  /** The `<id>` of a document route. */
+  documentId: string | null
+  /** The request's JSON body (a document route's `{ max_bytes }`). */
+  body: unknown
   channel: string | null
   input: unknown
   /** The assertion's `sub` when it verified, else null. */
@@ -34,6 +40,17 @@ export type FakeAnswer = (
   user: FakeLandmarkUser,
 ) => unknown
 
+/** A file a test adds: Landmark's row and the bytes in Storage. */
+export interface FakeDocument {
+  file_name: string
+  mime_type: string | null
+  /** The row's `file_size`; defaults to the bytes' length, null for an unknown one. */
+  file_size?: number | null
+  bytes: Uint8Array
+  /** Landmark's rule for this document and the caller (a role, an assigned project). */
+  visibleTo: (user: FakeLandmarkUser) => boolean
+}
+
 export const FAKE_LANDMARK_URL = 'https://landmark.test/functions/v1/assistant-api'
 export const FAKE_LANDMARK_SECRET = 'fake-landmark-secret-for-tests'
 
@@ -49,6 +66,9 @@ export class FakeLandmark {
   /** Off: the fake leaves voice data unclamped, so a test can see the pack clamp on its own. */
   clampOnVoice = true
   private answers = new Map<string, FakeAnswer>()
+  private documents = new Map<string, FakeDocument>()
+  /** Downloads from Storage: a size refusal must come before one. */
+  storageReads = 0
   private faults: Array<{ match: (c: LandmarkCall) => boolean; fault: LandmarkFault; remaining: number }> = []
   private seenJti = new Map<string, number>()
   private perMinute = new Map<string, number[]>()
@@ -66,6 +86,8 @@ export class FakeLandmark {
     this.inFlight = 0
     this.users.clear()
     this.answers.clear()
+    this.documents.clear()
+    this.storageReads = 0
     this.faults = []
     this.seenJti.clear()
     this.perMinute.clear()
@@ -80,6 +102,10 @@ export class FakeLandmark {
   /** What a tool answers: return the handler's data, or `{ error: '…' }` for its own refusal. */
   answer(tool: string, fn: FakeAnswer): void {
     this.answers.set(tool, fn)
+  }
+
+  addDocument(id: string, doc: FakeDocument): void {
+    this.documents.set(id, doc)
   }
 
   fault(match: (c: LandmarkCall) => boolean, fault: LandmarkFault, times = 1): void {
@@ -108,8 +134,19 @@ export class FakeLandmark {
       body = Symbol('unparseable')
     }
     const sub = url.pathname.startsWith(base.pathname) ? url.pathname.slice(base.pathname.length) : null
-    const route =
-      sub === '/me' ? 'me' : sub === '/manifest' ? 'manifest' : sub?.startsWith('/tools/') ? 'tool' : 'other'
+    const doc = sub ? /^\/documents\/([^/]+)(\/content)?$/.exec(sub) : null
+    const route: LandmarkCall['route'] =
+      sub === '/me'
+        ? 'me'
+        : sub === '/manifest'
+          ? 'manifest'
+          : sub?.startsWith('/tools/')
+            ? 'tool'
+            : doc
+              ? doc[2]
+                ? 'document_content'
+                : 'document'
+              : 'other'
     const tool = route === 'tool' ? sub!.slice('/tools/'.length) : null
     const record = body as { input?: unknown; channel?: unknown } | undefined
     const call: LandmarkCall = {
@@ -117,6 +154,8 @@ export class FakeLandmark {
       tool,
       channel: typeof record?.channel === 'string' ? record.channel : null,
       input: record?.input,
+      documentId: doc?.[1] ?? null,
+      body,
       sub: null,
       assertionProblem: null,
       headers: req.headers,
@@ -162,8 +201,42 @@ export class FakeLandmark {
       if (problem) return fail(400, 'bad_request', problem)
     }
 
+    if (route === 'document' || route === 'document_content') {
+      if (!UUID.test(call.documentId!)) return fail(400, 'bad_request', 'document id must be a uuid')
+      if (!isObject(body)) return fail(400, 'bad_request', 'body must be a JSON object')
+      if (route === 'document_content') {
+        const max = body.max_bytes
+        if (typeof max !== 'number' || !Number.isInteger(max) || max < 1 || max > 5_242_880)
+          return fail(400, 'bad_request', 'max_bytes must be an integer from 1 to 5242880')
+      }
+    }
+
     const user = this.users.get(verified.sub.toLowerCase())
     if (!user) return fail(403, 'not_mapped', 'no Landmark user for this address')
+
+    if (route === 'document' || route === 'document_content') {
+      if (this.overLimit(verified.sub)) return fail(429, 'rate_limited', 'more than 30 calls in a minute')
+      const d = this.documents.get(call.documentId!)
+      if (!d || !d.visibleTo(user)) return fail(404, 'not_found', 'document not found')
+      const size = d.file_size === undefined ? d.bytes.byteLength : d.file_size
+      if (route === 'document')
+        return json(200, {
+          data: { document_id: call.documentId, file_name: d.file_name, mime_type: d.mime_type, file_size: size },
+        })
+      const max = (body as { max_bytes: number }).max_bytes
+      if (size !== null && size > max) return fail(413, 'too_large', 'file is larger than max_bytes')
+      this.storageReads++
+      if (d.bytes.byteLength > max) return fail(413, 'too_large', 'file is larger than max_bytes')
+      return new Response(d.bytes.slice(), {
+        status: 200,
+        headers: {
+          'content-type': d.mime_type ?? 'application/octet-stream',
+          'content-length': String(d.bytes.byteLength),
+          'content-disposition': `attachment; filename*=UTF-8''${rfc5987(d.file_name)}`,
+          'cache-control': 'no-store',
+        },
+      })
+    }
 
     if (route === 'me') {
       return json(200, {
@@ -174,12 +247,7 @@ export class FakeLandmark {
     }
 
     // A tool call: the rate limit, then the role gate, then the answer.
-    const minute = this.perMinute.get(verified.sub) ?? []
-    const now = this.clock().getTime()
-    const recent = minute.filter((t) => t > now - 60_000)
-    recent.push(now)
-    this.perMinute.set(verified.sub, recent)
-    if (recent.length > 30) return fail(429, 'rate_limited', 'more than 30 calls in a minute')
+    if (this.overLimit(verified.sub)) return fail(429, 'rate_limited', 'more than 30 calls in a minute')
     const def = this.manifest.tools.find((t) => t.name === tool)!
     const channel = (body as { channel: 'chat' | 'voice' }).channel
     if (!def.roles.includes(user.role) || (channel === 'voice' && !def.voice))
@@ -202,6 +270,15 @@ export class FakeLandmark {
     const data = channel === 'voice' && this.clampOnVoice ? clampForVoice(result) : result
     // Landmark's search_help is the one handler that does not wrap its result in `data`.
     return json(200, tool === 'search_help' ? { data } : { data: { data } })
+  }
+
+  /** Counts one call for `sub`; true past 30 in a minute (tool and document routes alike). */
+  private overLimit(sub: string): boolean {
+    const now = this.clock().getTime()
+    const recent = (this.perMinute.get(sub) ?? []).filter((t) => t > now - 60_000)
+    recent.push(now)
+    this.perMinute.set(sub, recent)
+    return recent.length > 30
   }
 
   private verify(header: string | null): { ok: true; sub: string } | { ok: false; reason: string } {
@@ -237,6 +314,13 @@ export class FakeLandmark {
       return { ok: false, reason: 'sub_not_email' }
     return { ok: true, sub }
   }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** RFC 5987 percent-encoding: what `encodeURIComponent` leaves of `'()*!` too. */
+function rfc5987(name: string): string {
+  return encodeURIComponent(name).replace(/['()*!]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

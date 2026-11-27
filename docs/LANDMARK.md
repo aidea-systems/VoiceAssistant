@@ -18,10 +18,11 @@ packages/tools-landmark/            @va/tools-landmark   tools-* → core (defin
 ├── src/manifest.ts                 the manifest schema, loadManifest, parseManifest (refuses a hand edit), manifestVersion
 ├── src/assertion.ts                signAssertion: HS256, iss va, aud landmark-assistant-api, sub, 60 s, jti
 ├── src/subject.ts                  subjectOf: who may be signed for (confirmed, not banned, same address), from ctx.auth, no read
-├── src/reviewed.ts                 REVIEWED_TOOLS: the twelve names this repo accepts from a manifest; MAX_LIMIT, MAX_INPUT_CHARS
+├── src/reviewed.ts                 REVIEWED_TOOLS: the names this repo accepts from a manifest; DESCRIPTION_OVERRIDES; MAX_LIMIT, MAX_INPUT_CHARS
 ├── src/projects-context.ts         ProjectsContext: the caller's projects as the per-user block, four probes once per call, 5 min
 ├── src/clamp.ts                    clampForVoice, clipText: the voice clamps applied here too; refusal text bounded
-├── src/client.ts                   createLandmarkClient: POST /me, /manifest, /tools/<name>; LandmarkError
+├── src/client.ts                   createLandmarkClient: POST /me, /manifest, /tools/<name>, /documents/<id>[/content]; LandmarkError
+├── src/documents.ts                createLandmarkDocuments: describe / fetch a document as the caller, for the mail pack (Part 15)
 ├── src/access.ts                   LandmarkAccess: call (every outcome as what the model reads), allowedTools (/me, 60 s)
 ├── src/tools.ts                    one defineTool per manifest tool: zod from the JSON Schema, the schema advertised as is
 ├── src/rules.hr.ts                 LANDMARK_RULES_HR, the pack's own prompt rules (after Landmark's)
@@ -141,6 +142,34 @@ The twelve, their Landmark roles, all read-only and all on voice:
 | `get_project_financial_summary`    | Director, Accounting              |
 | `search_help`                      | all five                          |
 
+## Documents (Part 15)
+
+Decision 0020: a Cognilion document can be attached to an email the assistant sends.
+`list_documents_for_entity` (metadata of one entity's files, newest first; on voice five with
+the total) joins `REVIEWED_TOOLS`, with **our description** (`DESCRIPTION_OVERRIDES`: Landmark's
+points at `get_document_download_link`, a chat card in Landmark's own UI that the assistant does
+not have). It reaches the model, and the worker's allowlist, only after the manifest is pulled
+from the Landmark deploy that exposes it (`docs/requests/landmark-documents-request.md`); until
+then the snapshot has the twelve and `L14` pins the difference.
+
+`createLandmarkDocuments({ url, secret, fetch?, clock? })` is not a tool: the apps hand it to the
+mail pack (`MailPackConfig.documents`), which never imports this package.
+
+| Method                                         | Route                                          | Answer                                 |
+| ---------------------------------------------- | ---------------------------------------------- | -------------------------------------- |
+| `describe(ctx, id, signal, requestId?)`        | `POST /documents/<id>` `{}`                    | `{ name, mime, size }` or `{ error }`  |
+| `fetch(ctx, id, maxBytes, signal, requestId?)` | `POST /documents/<id>/content` `{ max_bytes }` | `{ name, mime, bytes }` or `{ error }` |
+
+Who may see a document is Landmark's rule, the one its `get_document_download_link` applies
+(Director and Accounting every document; anyone else one attached to an entity their RLS shows
+them; an unattached one finance only). The three reasons: `not_found` (hidden, missing, a bad
+id, an unmapped or unsignable caller: one answer for all), `too_large` (Landmark's 413 on the
+row's size before any download, or more than `maxBytes` arriving: the body is read with a cap,
+never whole), `unavailable` (anything else). The name comes from `Content-Disposition`
+(`filename*` first; separators and control characters dropped), the type from `Content-Type`
+(octet-stream when it has no type shape). Logs: the route, the document id, the byte count and
+the time; never the name or a byte.
+
 ## Prompt
 
 The pack's `domainRules` is Landmark's `domain_rules_hr` (its data-model rules: TIC as the
@@ -183,7 +212,7 @@ three stores, restart; between the first and the last the Landmark tools answer
 ## Scripts and tests
 
 ```sh
-pnpm --filter @va/tools-landmark test             # L01–L15 against the fake
+pnpm --filter @va/tools-landmark test             # L01–L22 against the fake
 pnpm --filter @va/tools-landmark manifest:pull    # re-pull the snapshot (dev project), then review the diff
 ```
 
@@ -192,6 +221,9 @@ with a verified assertion and the validated input, the phone's voice clamps, the
 refusal, the unmapped user, Landmark's role gate at advertisement and dispatch, the `/me`
 cache, every failure mode, who may be signed for, drift, the assertion itself, a `/me` of
 another shape, the bounds on what comes back, the reviewed list and schema shape, a future
-`iat`. `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
+`iat`. `L19`–`L22` (`src/documents.test.ts`): the document list through the loop with our
+description and the voice clamp, describe and fetch under Landmark's rule, the size bounds on
+both sides, the header parsing. `LA01`–`LA03` (API), `W45`–`W47` (worker). The fake (`test/fake-landmark.ts`)
 verifies the assertion as the function does, maps users, applies the manifest's role gate and
-schema, clamps on voice, and records every request.
+schema, clamps on voice, serves documents under a visibility predicate (counting Storage reads),
+and records every request.

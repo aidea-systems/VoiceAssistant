@@ -1,6 +1,7 @@
-// @va/tools-landmark: the company pack (Part 14, decision 0018). Landmark's twelve curated read
-// tools, called through its `assistant-api` edge function as the Landmark user the caller is,
-// with a 60 s signed assertion per request. The pack is built from the committed manifest
+// @va/tools-landmark: the company pack (Part 14, decision 0018). Landmark's curated read tools,
+// called through its `assistant-api` edge function as the Landmark user the caller is, with a
+// 60 s signed assertion per request; and its documents for the mail pack's attachments
+// (`createLandmarkDocuments`, Part 15). The pack is built from the committed manifest
 // snapshot; the app gives it the function's URL and the shared secret and decides which channel
 // gets which tool. Surface: docs/LANDMARK.md.
 import type { ToolPack } from '@va/core'
@@ -68,9 +69,19 @@ export {
   ME_TIMEOUT_MS,
   toLandmarkChannel,
 } from './access.js'
+export {
+  createLandmarkDocuments,
+  type DocumentDescription,
+  type DocumentFailure,
+  type DocumentFailureReason,
+  type DocumentFile,
+  type LandmarkDocuments,
+  type LandmarkDocumentsConfig,
+} from './documents.js'
 export { ASSERTION_AUDIENCE, ASSERTION_ISSUER, ASSERTION_TTL_S, signAssertion } from './assertion.js'
 export { clampForVoice, clipText, VOICE_MAX_CHARS, VOICE_MAX_ITEMS } from './clamp.js'
 export {
+  DESCRIPTION_OVERRIDES,
   MAX_INPUT_CHARS,
   MAX_LIMIT,
   REVIEWED_TOOLS,
@@ -79,6 +90,9 @@ export {
 } from './reviewed.js'
 export {
   createLandmarkClient,
+  type DocumentContent,
+  type DocumentInfo,
+  fileNameOf,
   LANDMARK_TAG,
   MAX_RESPONSE_BYTES,
   type LandmarkChannel,
@@ -86,6 +100,7 @@ export {
   type LandmarkClientConfig,
   LandmarkError,
   type Me,
+  mimeOf,
 } from './client.js'
 export {
   type LandmarkManifest,

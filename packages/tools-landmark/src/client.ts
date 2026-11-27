@@ -1,8 +1,10 @@
-// The HTTP client for Landmark's `assistant-api` over `fetch`: three POST routes under one base
-// URL, the assertion as the bearer, JSON in and out, the handler's abort signal passed through.
+// The HTTP client for Landmark's `assistant-api` over `fetch`: POST routes under one base URL,
+// the assertion as the bearer, JSON in and out except a document's bytes (bounded by the caller's
+// `maxBytes`), the handler's abort signal passed through.
 // Failures are the function's `{ error: { code, message } }` envelopes as `LandmarkError`s; a
 // network failure is one too. Logs carry the route, the tool, the channel, the status and the
-// time; never the input, the output, the email or the assertion (invariant 9).
+// time (a document's id and byte count); never the input, the output, a file name, the email or
+// the assertion (invariant 9).
 import { log } from '@va/core'
 import { z } from 'zod'
 
@@ -18,6 +20,7 @@ const CODE = /^[a-z_]{1,40}$/
 export type LandmarkChannel = 'chat' | 'voice'
 
 const NAME = /^[a-z][a-z0-9_]*$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export class LandmarkError extends Error {
   constructor(
@@ -78,10 +81,41 @@ export interface LogIds {
   request_id?: string
 }
 
+/** One document's metadata, as `/documents/<id>` answers it. */
+export const documentInfoSchema = z.object({
+  document_id: z.string(),
+  file_name: z.string().min(1).max(1000),
+  mime_type: z.string().max(200).nullable(),
+  file_size: z.number().int().nonnegative().nullable(),
+})
+export type DocumentInfo = z.infer<typeof documentInfoSchema>
+
+/** One document's bytes, as `/documents/<id>/content` answers them. */
+export interface DocumentContent {
+  /** From `Content-Disposition` (RFC 5987 `filename*`, else `filename`). */
+  name: string
+  /** From `Content-Type`, parameters dropped; `application/octet-stream` when it has no type shape. */
+  mime: string
+  bytes: Uint8Array
+}
+
+type LogFields = Record<string, string | number | undefined>
+
 export interface LandmarkClient {
   me(sub: string, signal: AbortSignal, ids?: LogIds): Promise<Me>
   /** Raw: the caller validates it (`parseManifest`). */
   manifest(sub: string, signal: AbortSignal): Promise<unknown>
+  /** `/documents/<id>`: refused `not_found` when the user may not see it (Landmark's rule). */
+  describeDocument(id: string, sub: string, signal: AbortSignal, ids?: LogIds): Promise<DocumentInfo>
+  /** `/documents/<id>/content`: refused `too_large` (Landmark's 413, or more than `maxBytes`
+   * arrived), never more than `maxBytes` read into memory. */
+  documentContent(
+    id: string,
+    maxBytes: number,
+    sub: string,
+    signal: AbortSignal,
+    ids?: LogIds,
+  ): Promise<DocumentContent>
   call(
     name: string,
     input: Record<string, unknown>,
@@ -97,23 +131,24 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
   const clock = config.clock ?? (() => new Date())
   const base = config.url.replace(/\/+$/, '')
 
-  async function post(
+  /** The request itself: signed, no redirects; a network failure is `LandmarkError('network')`. */
+  async function send(
     route: string,
     body: unknown,
     sub: string,
     signal: AbortSignal,
-    fields: Record<string, string | undefined>,
-  ): Promise<unknown> {
+    fields: LogFields,
+    accept: string,
+  ): Promise<Response> {
     const t0 = performance.now()
     const assertion = signAssertion(config.secret, sub, clock())
-    let res: Response
     try {
-      res = await doFetch(`${base}/${route}`, {
+      return await doFetch(`${base}/${route}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${assertion}`,
           'Content-Type': 'application/json',
-          Accept: 'application/json',
+          Accept: accept,
         },
         body: JSON.stringify(body),
         signal,
@@ -125,6 +160,10 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
       log('warn', LANDMARK_TAG, 'request failed', { ...fields, status: 0, ms: ms(t0) })
       throw new LandmarkError('network', 0, null)
     }
+  }
+
+  /** A JSON answer, at most `MAX_RESPONSE_BYTES`; a refusal's envelope becomes a `LandmarkError`. */
+  async function readJson(res: Response, fields: LogFields, t0: number): Promise<unknown> {
     const declared = Number(res.headers.get('content-length') ?? 0)
     const text = declared > MAX_RESPONSE_BYTES ? null : await res.text()
     if (text === null || text.length > MAX_RESPONSE_BYTES) {
@@ -152,6 +191,18 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
     throw new LandmarkError(code, res.status, detail)
   }
 
+  async function post(
+    route: string,
+    body: unknown,
+    sub: string,
+    signal: AbortSignal,
+    fields: LogFields,
+  ): Promise<unknown> {
+    const t0 = performance.now()
+    const res = await send(route, body, sub, signal, fields, 'application/json')
+    return readJson(res, fields, t0)
+  }
+
   return {
     async me(sub, signal, ids = {}) {
       const json = await post('me', {}, sub, signal, { route: 'me', ...ids })
@@ -161,6 +212,38 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
     },
     manifest(sub, signal) {
       return post('manifest', {}, sub, signal, { route: 'manifest' })
+    },
+    async describeDocument(id, sub, signal, ids = {}) {
+      if (!UUID.test(id)) throw new LandmarkError('bad_request', 0, 'document id')
+      const json = await post(`documents/${id}`, {}, sub, signal, { route: 'document', document_id: id, ...ids })
+      const parsed = documentInfoSchema.safeParse((json as { data?: unknown } | null)?.data)
+      if (!parsed.success || parsed.data.document_id !== id) throw new LandmarkError('bad_response', 200, null)
+      return parsed.data
+    },
+    async documentContent(id, maxBytes, sub, signal, ids = {}) {
+      if (!UUID.test(id)) throw new LandmarkError('bad_request', 0, 'document id')
+      const fields = { route: 'document_content', document_id: id, ...ids }
+      const t0 = performance.now()
+      const res = await send(`documents/${id}/content`, { max_bytes: maxBytes }, sub, signal, fields, '*/*')
+      if (!res.ok) {
+        await readJson(res, fields, t0) // throws the refusal's LandmarkError
+        throw new LandmarkError('bad_response', res.status, null)
+      }
+      const declared = res.headers.get('content-length')
+      const tooLarge = () => {
+        log('warn', LANDMARK_TAG, 'document too large', { ...fields, status: res.status, max_bytes: maxBytes })
+        return new LandmarkError('too_large', res.status, null)
+      }
+      if (declared !== null && Number(declared) > maxBytes) {
+        await res.body?.cancel()
+        throw tooLarge()
+      }
+      const bytes = await readCapped(res, maxBytes)
+      if (bytes === null) throw tooLarge()
+      const name = fileNameOf(res.headers.get('content-disposition'))
+      if (name === null) throw new LandmarkError('bad_response', res.status, null)
+      log('info', LANDMARK_TAG, 'request', { ...fields, status: res.status, bytes: bytes.byteLength, ms: ms(t0) })
+      return { name, mime: mimeOf(res.headers.get('content-type')), bytes }
     },
     async call(name, input, channel, sub, signal, ids = {}) {
       if (!NAME.test(name)) throw new LandmarkError('bad_request', 0, 'tool name')
@@ -180,4 +263,58 @@ export function createLandmarkClient(config: LandmarkClientConfig): LandmarkClie
 
 function ms(t0: number): number {
   return Math.round(performance.now() - t0)
+}
+
+/** The body, or null as soon as it passes `max` bytes (the rest is not read). */
+async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+  if (!res.body) return new Uint8Array(0)
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel()
+      return null
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.byteLength
+  }
+  return out
+}
+
+const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i
+
+export function mimeOf(header: string | null): string {
+  const type = header?.split(';')[0]?.trim().toLowerCase() ?? ''
+  return MIME.test(type) ? type : 'application/octet-stream'
+}
+
+/** The file name of a `Content-Disposition` header: `filename*=UTF-8''…` first, then a quoted
+ * or bare `filename=`; path separators and control characters removed; null when there is none. */
+export function fileNameOf(header: string | null): string | null {
+  if (!header) return null
+  let name: string | null = null
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header)
+  if (star?.[1]) {
+    try {
+      name = decodeURIComponent(star[1].trim())
+    } catch {
+      name = null
+    }
+  }
+  if (name === null) {
+    const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/i.exec(header)
+    name = plain ? (plain[1]?.replace(/\\(.)/g, '$1') ?? plain[2]?.trim() ?? null) : null
+  }
+  // eslint-disable-next-line no-control-regex
+  const clean = name?.replace(/[\u0000-\u001f\u007f/\\]/g, '').trim() ?? ''
+  return clean ? clean.slice(0, 255) : null
 }
