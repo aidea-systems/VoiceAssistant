@@ -1,6 +1,6 @@
 # Backlog — voice
 
-Ids: VOICE-30 (next free)
+Ids: VOICE-31 (next free)
 
 The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
 
@@ -138,6 +138,10 @@ The voice worker (`apps/voice`) and the spoken sink: adapters, latency, bench.
   it
 
 ## Resolved
+
+### VOICE-30 · High · After the PIN the assistant never answered: the gate-to-assistant handover hung on an open gate speech
+
+Fixed on `fix/gate-handover` (seen live 2026-11-27, two calls): every word after "Hvala. Izvolite." was dropped (`skipping user input, speech scheduling is paused`). LiveKit's `updateAgent` drains the gate agent and waits for its open speech tasks unless all are interrupted; one gate speech (created during the PIN prompt) stayed open, so the drain never ended and the assistant never started. The worker now force-interrupts the gate's speech (all its lines have played) right before `updateAgent`. No automated test: the worker entry has no harness (`VOICE-17`); the live call is the check.
 
 ### VOICE-29 · Medium · Greetings, thanks and goodbyes waited ~2 s in silence for the model
 
